@@ -1,8 +1,3 @@
----
-sidebar_position: 1
-title: CLI Guide
----
-
 # OpsChain CLI Guide
 
 A complete reference for the OpsChain (and MintPress) command-line interface — from first-time setup through advanced automation patterns.
