@@ -54,11 +54,53 @@ sudo mv opschain /usr/local/bin/
 
 MintPress users: download `mintpress_<platform>.zip` from the same release page.
 
+### Use the Docker image
+
+Docker images are published to Docker Hub for Linux (amd64 and arm64). This is the recommended option for CI/CD pipelines and Linux servers.
+
+| Image | Docker Hub |
+|-------|-----------|
+| OpsChain | `limepoint/opschain-cli` |
+| MintPress | `limepoint/mintpress-cli` |
+
+```bash
+# Always latest
+docker run --rm limepoint/opschain-cli:latest --help
+
+# Pinned version
+docker run --rm limepoint/opschain-cli:1.0.0 --help
+```
+
+Pass credentials via environment variables — no config file needed:
+
+```bash
+docker run --rm \
+  -e OPSCHAIN_API_URL=https://opschain.example.com/api \
+  -e OPSCHAIN_USERNAME=alice \
+  -e OPSCHAIN_PASSWORD=s3cr3t \
+  limepoint/opschain-cli:latest projects list
+```
+
+To use a config file from your host machine, mount it:
+
+```bash
+docker run --rm \
+  -v ~/.opschain:/home/opschain/.opschain:ro \
+  limepoint/opschain-cli:latest --profile staging projects list
+
+# MintPress
+docker run --rm \
+  -v ~/.mintpress:/home/mintpress/.mintpress:ro \
+  limepoint/mintpress-cli:latest --profile staging projects list
+```
+
+> **Note:** macOS and Windows users can use these Docker images via Docker Desktop, which runs a Linux VM transparently. For native macOS/Windows, download the pre-built binary above instead.
+
 ### Verify installation
 
 ```bash
 opschain version
-# opschain version v1.0.0
+# opschain version 1.0.0
 #   commit: abc1234
 #   built:  2025-01-01 00:00:00 UTC
 ```
@@ -122,6 +164,28 @@ opschain config profiles delete old-env
 # Use a non-default profile for a single command
 opschain --profile staging projects list
 opschain -p prod changes list
+```
+
+**Reducing repetition with profiles:**
+
+Once you have set `current_profile` in your config file (via `opschain config profiles use dev`), you no longer need to pass `--profile` on every command. Once you have set `default_project` in that profile, you no longer need to pass `--project` on project-scoped commands.
+
+```bash
+# Without any profile configuration — must supply everything each time
+opschain --profile dev environments list --project myproject
+opschain --profile dev workflows list --project myproject
+opschain --profile dev changes list --project myproject
+
+# After: opschain config profiles use dev
+# (sets current_profile=dev in config file — profile flag no longer needed)
+opschain environments list --project myproject
+opschain workflows list --project myproject
+
+# After also setting default_project=myproject in the dev profile:
+# (opschain config profiles update dev --default-project myproject)
+opschain environments list
+opschain workflows list
+opschain changes list
 ```
 
 ### 3.3 Environment Variables
