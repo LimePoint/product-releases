@@ -125,8 +125,7 @@ profiles:
     default_project: platform
   staging:
     api_url: https://staging.opschain.example.com/api
-    username: alice
-    password: stagingpass
+    token: eyJhbGciOiJIUzI1NiJ9...   # bearer token instead of username/password
     timeout: 120
   prod:
     api_url: https://opschain.example.com/api
@@ -144,6 +143,7 @@ profiles:
 | `api_url` | string | Full URL to the API root (e.g. `https://host/api`) |
 | `username` | string | HTTP Basic Auth username |
 | `password` | string | HTTP Basic Auth password |
+| `token` | string | Bearer token (alternative to username/password — takes precedence when set) |
 | `insecure` | bool | Skip TLS certificate verification (dev only) |
 | `timeout` | int | HTTP request timeout in seconds (default: 60) |
 | `default_project` | string | Default project code — omit `--project` flag when set |
@@ -155,9 +155,11 @@ Profiles let you maintain separate credentials for different OpsChain instances 
 ```bash
 # Manage profiles interactively
 opschain config profiles add dev
+opschain config profiles add staging --token eyJhbGci...   # token-based profile
 opschain config profiles list
 opschain config profiles show dev
 opschain config profiles update dev --api-url https://new-dev.example.com/api
+opschain config profiles update staging --token eyJnewToken...   # refresh a token
 opschain config profiles use staging      # sets current_profile in config file
 opschain config profiles delete old-env
 
@@ -199,27 +201,79 @@ Environment variables override the config file — useful in CI/CD pipelines whe
 | `OPSCHAIN_API_URL` | `api_url` | API base URL |
 | `OPSCHAIN_USERNAME` | `username` | Username |
 | `OPSCHAIN_PASSWORD` | `password` | Password |
+| `OPSCHAIN_TOKEN` | `token` | Bearer token (takes precedence over username/password) |
 | `OPSCHAIN_PROFILE` | — | Profile name to use |
 | `OPSCHAIN_INSECURE` | `insecure` | `true` or `1` to skip TLS verification |
 | `OPSCHAIN_TIMEOUT` | `timeout` | Timeout in seconds |
 | `OPSCHAIN_DEFAULT_PROJECT` | `default_project` | Default project code |
 
-**MintPress equivalents:** Replace `OPSCHAIN_` with `MINTPRESS_` (e.g. `MINTPRESS_API_URL`).
+**MintPress equivalents:** Replace `OPSCHAIN_` with `MINTPRESS_` (e.g. `MINTPRESS_API_URL`, `MINTPRESS_TOKEN`).
 
 **Precedence order (highest to lowest):**
 
-1. Environment variables (`OPSCHAIN_*`)
-2. `--profile` / `-p` command-line flag
-3. `OPSCHAIN_PROFILE` environment variable
-4. `current_profile` in config file
+1. `--token` command-line flag
+2. Environment variables (`OPSCHAIN_TOKEN`, `OPSCHAIN_USERNAME`, `OPSCHAIN_PASSWORD`, …)
+3. `--profile` / `-p` command-line flag
+4. `OPSCHAIN_PROFILE` environment variable
+5. `current_profile` in config file
+
+**Auth method precedence:** When both a token and username/password are present (from any source), the bearer token is always used.
 
 ```bash
-# Example: completely config-file-free usage
+# Config-file-free usage with basic auth
 export OPSCHAIN_API_URL=https://dev.opschain.example.com/api
 export OPSCHAIN_USERNAME=alice
 export OPSCHAIN_PASSWORD=s3cr3t
 opschain projects list
+
+# Config-file-free usage with bearer token
+export OPSCHAIN_API_URL=https://dev.opschain.example.com/api
+export OPSCHAIN_TOKEN=eyJhbGciOiJIUzI1NiJ9...
+opschain projects list
 ```
+
+### 3.4 Bearer Token Authentication
+
+OpsChain supports bearer token authentication as an alternative to username/password. Tokens are short-lived (typically 4 hours) or long-lived API keys depending on how they are issued.
+
+#### Why use tokens?
+
+- **CI/CD pipelines** — store a token as a secret instead of username + password
+- **Fine-grained expiry** — tokens expire automatically; no need to rotate passwords
+- **Auditing** — token usage is tracked separately from interactive sessions
+- **Security** — a compromised token can be revoked without changing a user's password
+
+#### `tokens login` — obtain and save a token
+
+`tokens login` authenticates with username and password, receives a bearer token from the API, and saves it to the active profile. All subsequent commands automatically use the bearer token.
+
+```bash
+# Interactive — prompts for username and password
+opschain tokens login
+
+# Non-interactive — supply credentials via flags
+opschain tokens login --username alice --password s3cr3t
+
+# Non-interactive — supply credentials via environment variables
+OPSCHAIN_USERNAME=alice OPSCHAIN_PASSWORD=s3cr3t opschain tokens login
+
+# Against a specific API URL (useful before a profile is fully set up)
+opschain tokens login --api-url https://staging.opschain.example.com/api
+```
+
+After a successful login, the token is written to the active profile's `token` field. You can confirm which auth method is being used with `--debug` (see §15).
+
+> **Token expiry:** Access tokens are short-lived (typically a few hours). Re-run `opschain tokens login` when a token expires — you will get a 401 response if it has.
+
+#### Credential resolution order
+
+When making any API call the CLI checks for credentials in this order and uses the first one it finds:
+
+1. `--token` command-line flag
+2. `OPSCHAIN_TOKEN` environment variable
+3. `token` field in the active profile
+4. Basic auth: `OPSCHAIN_USERNAME` / `OPSCHAIN_PASSWORD` environment variables
+5. Basic auth: `username` / `password` fields in the active profile
 
 ---
 
@@ -231,6 +285,7 @@ These flags are available on every command.
 |---|---|---|---|
 | `--config` | | `~/.opschain/config.yaml` | Path to config file |
 | `--profile` | `-p` | (current_profile) | Connection profile to use |
+| `--token` | | — | Bearer token (overrides profile token and basic auth) |
 | `--output` | `-o` | `table` | Output format: `table`, `json`, `yaml` |
 | `--quiet` | `-q` | false | Print only IDs (for scripting) |
 | `--debug` | | false | Log HTTP request/response details to stderr |
@@ -1128,13 +1183,38 @@ opschain authorisation-policies assignments set "Platform Admins" \
 
 ### Setting credentials in CI without config files
 
+**Option 1 — Bearer token (recommended)**
+
+Store a single `OPSCHAIN_TOKEN` secret in your CI system. Obtain the token by running `opschain tokens login` locally or in a separate authentication step.
+
 ```bash
-# In your CI environment (e.g. GitHub Actions, GitLab CI, Jenkins)
+export OPSCHAIN_API_URL=${{ secrets.OPSCHAIN_API_URL }}
+export OPSCHAIN_TOKEN=${{ secrets.OPSCHAIN_TOKEN }}
+
+opschain changes list -P myproject
+```
+
+**Option 2 — Username and password**
+
+```bash
 export OPSCHAIN_API_URL=${{ secrets.OPSCHAIN_API_URL }}
 export OPSCHAIN_USERNAME=${{ secrets.OPSCHAIN_USERNAME }}
 export OPSCHAIN_PASSWORD=${{ secrets.OPSCHAIN_PASSWORD }}
 
 opschain changes list -P myproject
+```
+
+**Option 3 — Login step in pipeline (token refreshed each run)**
+
+```bash
+export OPSCHAIN_API_URL=${{ secrets.OPSCHAIN_API_URL }}
+# Login using username/password secrets, save token to a temp profile
+opschain --profile ci tokens login \
+  --username ${{ secrets.OPSCHAIN_USERNAME }} \
+  --password ${{ secrets.OPSCHAIN_PASSWORD }}
+
+# Subsequent commands use the bearer token automatically
+opschain --profile ci changes list -P myproject
 ```
 
 ### Capture IDs with `-q` for shell scripting
@@ -1210,8 +1290,7 @@ jobs:
       - name: Deploy
         env:
           OPSCHAIN_API_URL: ${{ secrets.OPSCHAIN_API_URL }}
-          OPSCHAIN_USERNAME: ${{ secrets.OPSCHAIN_USERNAME }}
-          OPSCHAIN_PASSWORD: ${{ secrets.OPSCHAIN_PASSWORD }}
+          OPSCHAIN_TOKEN: ${{ secrets.OPSCHAIN_TOKEN }}   # bearer token preferred in CI
         run: |
           ./opschain changes create \
             -P myproject -E prod -A webapp -a deploy \
@@ -1231,8 +1310,7 @@ pipeline {
     environment {
         // Store credentials in Jenkins as Secret Text credentials
         OPSCHAIN_API_URL = credentials('opschain-api-url')
-        OPSCHAIN_USERNAME = credentials('opschain-username')
-        OPSCHAIN_PASSWORD = credentials('opschain-password')
+        OPSCHAIN_TOKEN   = credentials('opschain-token')   // bearer token preferred
         OPSCHAIN_PROJECT = credentials('opschain-project')
     }
 
@@ -1328,6 +1406,13 @@ opschain --debug projects list 2>&1 | head -40
 opschain --debug changes create -P myproject -E dev -A myasset -a deploy 2>debug.log
 ```
 
+The `Authorization` header is always masked but shows the auth **scheme**, so you can confirm which method is in use:
+
+```
+DEBUG:   Authorization: Bearer ****   ← bearer token is active
+DEBUG:   Authorization: Basic ****    ← basic auth is active
+```
+
 ### `--stacktrace` — Go stack trace on error
 
 For unexpected panics or internal errors, `--stacktrace` prints the full goroutine stack.
@@ -1355,7 +1440,7 @@ OPSCHAIN_INSECURE=true opschain projects list
 | Error | Likely cause | Fix |
 |---|---|---|
 | `failed to load config: profile 'X' not found` | Profile doesn't exist | Run `opschain config profiles list` and fix spelling, or create the profile |
-| `401 Unauthorized` | Wrong credentials | Check `OPSCHAIN_USERNAME` / `OPSCHAIN_PASSWORD` or the profile credentials |
+| `401 Unauthorized` | Wrong credentials or expired token | Check `OPSCHAIN_USERNAME` / `OPSCHAIN_PASSWORD`, or re-run `opschain tokens login` if using a bearer token |
 | `404 Not Found` | Resource code/ID is wrong, or wrong project scope | Verify the resource exists with a `list` command first |
 | `--environment requires --project to be specified` | Forgot `-P` flag | Add `-P <project_code>` to the command |
 | `--asset requires --project to be specified` | Forgot `-P` flag | Add `-P <project_code>` to the command |
