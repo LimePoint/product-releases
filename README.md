@@ -234,7 +234,10 @@ opschain projects list
 
 ### 3.4 Bearer Token Authentication
 
-OpsChain supports bearer token authentication as an alternative to username/password. Tokens are short-lived (typically 4 hours) or long-lived API keys depending on how they are issued.
+OpsChain supports bearer token authentication as an alternative to username/password. There are two token types:
+
+- **Access tokens** — short-lived (typically a few hours), obtained via `tokens login`
+- **API key tokens** — long-lived, created via `tokens create-api-key` for automation
 
 #### Why use tokens?
 
@@ -261,9 +264,77 @@ OPSCHAIN_USERNAME=alice OPSCHAIN_PASSWORD=s3cr3t opschain tokens login
 opschain tokens login --api-url https://staging.opschain.example.com/api
 ```
 
-After a successful login, the token is written to the active profile's `token` field. You can confirm which auth method is being used with `--debug` (see §15).
+After a successful login, the token is written to the active profile's `token` field. You can confirm which auth method is being used with `--debug` (see §17).
 
 > **Token expiry:** Access tokens are short-lived (typically a few hours). Re-run `opschain tokens login` when a token expires — you will get a 401 response if it has.
+
+#### `tokens logout` — revoke the current session
+
+Revokes the active access token via the API and clears it from the active profile.
+
+```bash
+opschain tokens logout
+```
+
+#### `tokens list` — view all tokens
+
+Lists all tokens for the current user, sorted by expiry date (furthest expiry first).
+
+```bash
+opschain tokens list
+opschain tokens list --output json
+```
+
+#### `tokens get` — inspect a token
+
+```bash
+opschain tokens get <id>
+```
+
+#### `tokens current` — show the active session token
+
+Shows the token currently being used for API calls.
+
+```bash
+opschain tokens current
+```
+
+#### `tokens delete` — revoke a token by ID
+
+```bash
+opschain tokens delete <id>
+```
+
+#### `tokens delete-all` — revoke all tokens
+
+Revokes every token for the current user. Prompts for confirmation unless `--force` is passed. The current session token is deleted last to keep authentication valid throughout. Clears the token from the active profile on success.
+
+```bash
+# Interactive confirmation
+opschain tokens delete-all
+
+# Non-interactive (CI / scripts)
+opschain tokens delete-all --force
+```
+
+#### `tokens create-api-key` — create a long-lived API key
+
+Creates an API key token for automation. The bearer token is printed once on creation — store it securely as it cannot be retrieved again.
+
+```bash
+# Minimal — uses profile credentials for auth
+opschain tokens create-api-key --description "CI deploy token"
+
+# With an expiry date
+opschain tokens create-api-key --description "CI deploy token" --expiry-date 2026-12-31
+```
+
+| Flag | Description |
+|---|---|
+| `--description` | Human-readable label for the token |
+| `--expiry-date` | Expiry date in `YYYY-MM-DD` format |
+| `--username` | Username override (if not using profile credentials) |
+| `--password` | Password override (if not using profile credentials) |
 
 #### Credential resolution order
 
@@ -344,6 +415,12 @@ opschain projects get myproject -o yaml
 opschain projects create --code myproject --name "My Project" --description "Demo project"
 opschain projects create --code quickproj   # name defaults to code
 
+# Update a project
+opschain projects update myproject --name "New Name"
+opschain projects update myproject --description "Updated description"
+opschain projects update myproject --archived=true    # archive
+opschain projects update myproject --archived=false   # unarchive
+
 # Delete a project
 opschain projects delete myproject
 opschain projects delete myproject -q   # prints deleted code
@@ -357,6 +434,14 @@ opschain projects delete myproject -q   # prints deleted code
 | `--name` | No | same as code | Human-readable name |
 | `--description` | No | — | Optional description |
 | `--type` | No | `Enterprise` | Project type |
+
+**Update flags** (at least one required):
+
+| Flag | Description |
+|---|---|
+| `--name` | New project name |
+| `--description` | New description (pass empty string to clear) |
+| `--archived` | `true` to archive, `false` to unarchive |
 
 ### Project properties
 
@@ -600,15 +685,149 @@ opschain assets generate-actions cancel myasset <request-id>
 
 ---
 
-## 10. Changes (Executing Actions)
+## 10. Agents
 
-### 10.1 What a change is
+Agents are containerised execution environments that run OpsChain actions. Each agent is built from a template and can be independently started, stopped, and rebuilt.
+
+> **Note:** All agent commands require `--project` / `-P`. Use `-E` to scope agents to an environment.
+
+### 10.1 Basic CRUD
+
+```bash
+# List agents in a project
+opschain agents list -P myproject
+
+# List agents scoped to an environment
+opschain agents list -P myproject -E dev
+
+# Get an agent by code
+opschain agents get myagent -P myproject
+
+# Create an agent from a template
+opschain agents create -P myproject \
+  --code myagent \
+  --name "My Agent" \
+  --template-code agent-template \
+  --template-version v1.0
+
+# Update an agent
+opschain agents update myagent -P myproject --name "New Name"
+opschain agents update myagent -P myproject --archived=true
+
+# Delete an agent
+opschain agents delete myagent -P myproject
+```
+
+### 10.2 Building the container image
+
+Before an agent can run, its container image must be built. Building is async — the command returns a task ID immediately.
+
+```bash
+# Trigger an image build
+opschain agents build myagent -P myproject
+
+# Check build status
+opschain agents status myagent -P myproject
+```
+
+The build task response includes a task ID. Use `--output json` to see full task details including `status_code` (`initializing`, `running`, `success`, `failed`).
+
+### 10.3 Starting and stopping agents
+
+Once an image is built, use `start` and `stop` to control the agent's runtime state.
+
+```bash
+# Start the agent
+opschain agents start myagent -P myproject
+
+# Stop the agent
+opschain agents stop myagent -P myproject
+
+# Wait until the agent is fully running before returning
+opschain agents start myagent -P myproject --wait
+
+# Wait until the agent has fully stopped
+opschain agents stop myagent -P myproject --wait
+```
+
+With `--wait`, the CLI polls every 5 seconds and prints the current status to stderr until the agent reaches the target state. Useful in scripts or pipelines where subsequent steps depend on the agent being up or down.
+
+### 10.4 Monitoring agent status
+
+```bash
+# Show current and desired status, image SHAs, and build status
+opschain agents status myagent -P myproject
+```
+
+### 10.5 Viewing agent logs
+
+```bash
+# Last 50 log lines (default)
+opschain agents logs myagent -P myproject
+
+# Adjust the number of lines returned
+opschain agents logs myagent -P myproject --limit 100
+opschain agents logs myagent -P myproject -l 200
+
+# Retrieve all log lines
+opschain agents logs myagent -P myproject --all
+```
+
+`--all` overrides `--limit` and returns the complete log history for the agent.
+
+### 10.6 Kubernetes events
+
+View Kubernetes events for a running agent (the agent must be in `running` state):
+
+```bash
+# Last 50 events (default), newest first
+opschain agents k8s-events myagent -P myproject
+
+# Adjust the number of events returned
+opschain agents k8s-events myagent -P myproject --limit 20
+opschain agents k8s-events myagent -P myproject -l 100
+
+# Retrieve all events
+opschain agents k8s-events myagent -P myproject --all
+```
+
+`--all` overrides `--limit` and returns the complete Kubernetes event history for the agent.
+
+### 10.7 Properties and settings
+
+```bash
+opschain agents properties get myagent -P myproject
+opschain agents properties update myagent -P myproject \
+  --data '{"key": "value"}' --version 1
+
+opschain agents settings get myagent -P myproject
+```
+
+### 10.8 Converged properties
+
+Shows the fully merged properties that will apply to the agent — combining template (repository) properties, project properties, and agent-specific properties.
+
+```bash
+# Current merged properties
+opschain agents converged-properties myagent -P myproject --output json
+
+# Properties as they would have been at a specific point in time
+opschain agents converged-properties myagent -P myproject \
+  --converge-date 2026-04-01T00:00:00+00:00 \
+  --output yaml
+```
+
+---
+
+## 11. Changes (Executing Actions)
+
+### 11.1 What a change is
 
 A **change** represents the execution of a single action against a project, environment, or asset. Changes are the primary mechanism through which OpsChain drives any automated process — deployments, configuration updates, compliance checks, data migrations, or custom scripts. Every change is tracked with a unique ID, status code, start/end timestamps, and a log stream.
 
 Terminal statuses: `success`, `error`, `cancelled`, `failed`.
 
-### 10.2 Creating changes
+### 11.2 Creating changes
 
 #### Asset scope (simplest — recommended starting point)
 
@@ -672,7 +891,7 @@ opschain changes create \
 | `--utc` | | No | Display timestamps in UTC |
 | `--from-file` | | No | Load entire request from a JSON file |
 
-### 10.3 Listing and filtering changes
+### 11.3 Listing and filtering changes
 
 By default, `changes list` returns the 15 most-recent changes across all scopes.
 
@@ -741,7 +960,7 @@ opschain changes list --project myproject --utc
 
 **Available Ransack predicates:** `_eq`, `_not_eq`, `_cont`, `_start`, `_end`, `_gt`, `_lt`, `_gteq`, `_lteq`
 
-### 10.4 Viewing logs
+### 11.4 Viewing logs
 
 ```bash
 # Fetch logs for a specific change (root step only)
@@ -757,7 +976,7 @@ opschain changes logs b5bf89b6 --utc
 opschain changes logs b5bf89b6 -o json
 ```
 
-### 10.5 Cancel a change
+### 11.5 Cancel a change
 
 ```bash
 opschain changes cancel b5bf89b6-6512-4f18-8b4d-cdac8a597231
@@ -768,13 +987,13 @@ opschain changes cancel b5bf89b6 -q   # prints ID on success
 
 ---
 
-## 11. Workflows
+## 12. Workflows
 
 Workflows are reusable automation scripts written in YAML that can orchestrate complex multi-step actions. They are versioned and project-scoped.
 
 > **Note:** Commands in this section require a project code. Either pass `--project <code>` / `-P <code>` on each command, or set `default_project` in your active profile (see §3.1) to omit it entirely.
 
-### 11.1 Managing workflows
+### 12.1 Managing workflows
 
 ```bash
 # List workflows in a project
@@ -816,7 +1035,7 @@ opschain workflows delete-drafts deploy-app
 opschain workflows versions deploy-app
 ```
 
-### 11.2 Running workflows
+### 12.2 Running workflows
 
 ```bash
 # Execute a specific version of a workflow
@@ -862,20 +1081,20 @@ opschain workflows runs cancel $RUN_ID
 
 ---
 
-## 12. Scheduling
+## 13. Scheduling
 
 OpsChain supports two ways to schedule automated actions.
 
 > **Note:** Commands in this section require a project code. Either pass `--project <code>` / `-P <code>` on each command, or set `default_project` in your active profile (see §3.1) to omit it entirely.
 
-### 12.1 Two approaches
+### 13.1 Two approaches
 
 | Approach | Best for |
 |---|---|
 | `opschain changes create --schedule "..."` | Simple one-off or recurring change schedules |
 | `opschain scheduled-activities create` | Full control over scheduling, both changes and workflows |
 
-### 12.2 Cron expressions and one-shot `--run-at`
+### 13.2 Cron expressions and one-shot `--run-at`
 
 Use standard 5-field cron expressions:
 
@@ -906,7 +1125,7 @@ opschain changes create -E dev -A myasset -a deploy \
   --timezone "Australia/Sydney"
 ```
 
-### 12.3 Timezones
+### 13.3 Timezones
 
 All `--run-at` and `--end-at` datetimes without an explicit timezone offset are interpreted in the timezone specified by `--timezone` (or local timezone if omitted). Values are stored internally as UTC.
 
@@ -923,7 +1142,7 @@ All `--run-at` and `--end-at` datetimes without an explicit timezone offset are 
 --run-at "2025-06-01T09:00:00+10:00"
 ```
 
-### 12.4 Scheduling via `changes create`
+### 13.4 Scheduling via `changes create`
 
 This creates a scheduled activity automatically, without requiring you to use the `scheduled-activities` command directly.
 
@@ -954,7 +1173,7 @@ opschain changes create \
   --end-at "2025-12-31 00:00:00"
 ```
 
-### 12.5 Scheduled Activities management
+### 13.5 Scheduled Activities management
 
 Use `opschain scheduled-activities` (alias: `scheduled-activity`) for full CRUD control.
 
@@ -996,7 +1215,7 @@ opschain scheduled-activities update <id> --git-rev develop
 opschain scheduled-activities delete <id>
 ```
 
-### 12.6 Scheduling examples
+### 13.6 Scheduling examples
 
 ```bash
 # Daily database backup (workflow)
@@ -1038,15 +1257,15 @@ opschain scheduled-activities create \
 
 ---
 
-## 13. Security (Authorisation Policies)
+## 14. Security (Authorisation Policies)
 
-### 13.1 What policies and rules are
+### 14.1 What policies and rules are
 
 An **authorisation policy** is a named set of access control rules. Each **rule** defines what a user can do at a particular path in OpsChain's resource hierarchy. **Assignments** link users or groups to a policy.
 
 A path like `/projects/myproject/environments/dev` grants access scoped to that environment.
 
-### 13.2 Policies: CRUD
+### 14.2 Policies: CRUD
 
 Policies support lookup by name (default) or by UUID (`--id` flag).
 
@@ -1076,7 +1295,7 @@ opschain authorisation-policies delete "Read-Only Users"
 opschain authorisation-policies delete --id abc-uuid-123
 ```
 
-### 13.3 Rules
+### 14.3 Rules
 
 Rules control access at specific resource paths. There is **no bulk list endpoint** — the CLI fetches rules individually using policy relationship data.
 
@@ -1118,7 +1337,7 @@ opschain authorisation-policies rules update "Read-Only Users" <rule-id> \
 opschain authorisation-policies rules delete "Read-Only Users" <rule-id>
 ```
 
-### 13.4 Assignments
+### 14.4 Assignments
 
 Assignments link users or groups to a policy. The assignments endpoint replaces **all** assignments on POST, so `set` is destructive while `add` is additive.
 
@@ -1145,7 +1364,7 @@ opschain authorisation-policies assignments remove "Read-Only Users" --all
 
 > **Note:** Each assignment has either a `username` OR a `groupname`, never both.
 
-### 13.5 Examples
+### 14.5 Examples
 
 ```bash
 # Create a read-only policy for a specific project
@@ -1179,7 +1398,147 @@ opschain authorisation-policies assignments set "Platform Admins" \
 
 ---
 
-## 14. Scripting & CI/CD Patterns
+## 15. Events
+
+Events are audit records emitted whenever something happens in OpsChain — a change runs, a workflow executes, a user logs in, a resource is created. They can be user-generated or system-generated.
+
+### 15.1 Listing events
+
+```bash
+# List the 15 most recent events (default)
+opschain events list
+
+# Increase the limit
+opschain events list --limit 50
+
+# Output as JSON or YAML for piping
+opschain events list --output json
+```
+
+### 15.2 Convenience filters
+
+These flags cover the most common filtering needs:
+
+```bash
+# Events of a specific type
+opschain events list --type "change.completed"
+opschain events list -t "workflow.run.started"
+
+# Events by a specific user
+opschain events list --username alice
+opschain events list -u deploy-bot
+
+# Only system-generated events
+opschain events list --system
+
+# Only user-generated events (exclude system)
+opschain events list --user
+```
+
+### 15.3 Advanced filtering with `--filter`
+
+The `--filter` flag maps directly to OpsChain's Ransack-style filter parameters. The format is `field_predicate=value`.
+
+**Predicates:**
+
+| Predicate | Meaning | Example |
+|---|---|---|
+| `_eq` | Exact match | `type_eq=change.completed` |
+| `_cont` | Contains (case-sensitive) | `type_cont=change` |
+| `_start` | Starts with | `type_start=change.` |
+| `_end` | Ends with | `type_end=.failed` |
+| `_gt` | Greater than | `created_at_gt=2026-01-01T00:00:00Z` |
+| `_lt` | Less than | `created_at_lt=2026-04-30T00:00:00Z` |
+| `_gteq` | Greater than or equal | `created_at_gteq=2026-04-01T00:00:00Z` |
+| `_lteq` | Less than or equal | `created_at_lteq=2026-04-30T23:59:59Z` |
+
+**Filterable fields:** `type`, `username`, `system`, `event_node_path`, `created_at`
+
+**Examples:**
+
+```bash
+# All failed change events
+opschain events list --filter "type_end=.failed"
+
+# Events for a specific project node path
+opschain events list --filter "event_node_path_eq=/projects/myproject"
+
+# Events under a project (all environments, assets, etc.)
+opschain events list --filter "event_node_path_start=/projects/myproject"
+
+# Events in a date range
+opschain events list \
+  --filter "created_at_gteq=2026-04-01T00:00:00Z" \
+  --filter "created_at_lteq=2026-04-30T23:59:59Z"
+
+# Combine filters: failed changes in a project this month
+opschain events list \
+  --filter "type_end=.failed" \
+  --filter "event_node_path_start=/projects/myproject" \
+  --filter "created_at_gteq=2026-04-01T00:00:00Z" \
+  --limit 100
+```
+
+Multiple `--filter` flags are AND-ed together.
+
+### 15.4 Sorting
+
+```bash
+# Sort by created_at ascending (oldest first)
+opschain events list --sort "created_at asc"
+
+# Sort by type
+opschain events list --sort "type asc"
+```
+
+Default sort is `created_at desc` (newest first).
+
+### 15.5 Get a specific event
+
+```bash
+opschain events get <event-id>
+opschain events get eb89e69e-5feb-4751-abe7-8a2fa53ce42e --output json
+```
+
+### 15.6 Creating a custom event
+
+You can emit custom events — useful for marking external milestones (pipeline stages, approvals, deployments from other tools) in the OpsChain audit trail.
+
+`--type` is required. Additional attributes can be passed inline as JSON via `--data`, or loaded from a file via `--from-file`. The two are mutually exclusive.
+
+```bash
+# Minimal event
+opschain events create --type "deploy.started"
+
+# With additional context inline
+opschain events create \
+  --type "deploy.completed" \
+  --data '{"environment": "prod", "version": "v2.1.0", "triggered_by": "github-actions"}'
+
+# Load complex data from a file
+opschain events create --type "deploy.completed" --from-file ./event-payload.json
+
+# Capture the new event ID for later lookup
+event_id=$(opschain events create --type "pipeline.checkpoint" -q)
+opschain events get "$event_id"
+```
+
+The JSON file (or `--data` value) should be a flat or nested object — its keys are merged directly into the event's attributes alongside `type`:
+
+```json
+{
+  "environment": "prod",
+  "version": "v2.1.0",
+  "metadata": {
+    "pipeline": "deploy",
+    "run_id": "12345"
+  }
+}
+```
+
+---
+
+## 16. Scripting & CI/CD Patterns
 
 ### Setting credentials in CI without config files
 
@@ -1394,7 +1753,7 @@ opschain scheduled-activities create \
 
 ---
 
-## 15. Troubleshooting
+## 17. Troubleshooting
 
 ### `--debug` — inspect HTTP traffic
 
