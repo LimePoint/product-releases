@@ -31,28 +31,26 @@ Pre-built binaries for all platforms are published to the public [limepoint/prod
 
 1. Go to [github.com/limepoint/product-releases/releases](https://github.com/limepoint/product-releases/releases) and find the latest release.
 2. Download the zip for your platform:
-
-| Platform | File |
-|----------|------|
-| macOS (Apple Silicon) | `opschain_darwin_arm64.zip` |
-| macOS (Intel) | `opschain_darwin_amd64.zip` |
-| Linux (x86-64) | `opschain_linux_amd64.zip` |
-| Linux (ARM64) | `opschain_linux_arm64.zip` |
-| Windows (x86-64) | `opschain_windows_amd64.zip` |
-| Windows (ARM64) | `opschain_windows_arm64.zip` |
+    | Platform | File |
+    |----------|------|
+    | macOS (Apple Silicon) | `opschain_darwin_arm64.zip` |
+    | macOS (Intel) | `opschain_darwin_amd64.zip` |
+    | Linux (x86-64) | `opschain_linux_amd64.zip` |
+    | Linux (ARM64) | `opschain_linux_arm64.zip` |
+    | Windows (x86-64) | `opschain_windows_amd64.zip` |
+    | Windows (ARM64) | `opschain_windows_arm64.zip` |
 
 3. Unzip and place the binary on your `PATH`:
 
-```bash
-# macOS / Linux example
-unzip opschain_darwin_arm64.zip
-chmod +x opschain
-sudo mv opschain /usr/local/bin/
-```
+   ```bash
+   # macOS / Linux example
+   unzip opschain_darwin_arm64.zip
+   chmod +x opschain
+   sudo mv opschain /usr/local/bin/
+   ```
 
 4. On **macOS**, the binary is signed and notarized by LimePoint — Gatekeeper will accept it automatically. If you see a security prompt, go to **System Settings → Privacy & Security** and click **Allow Anyway**.
-
-MintPress users: download `mintpress_<platform>.zip` from the same release page.
+  MintPress users: download `mintpress_<platform>.zip` from the same release page.
 
 ### Use the Docker image
 
@@ -75,7 +73,7 @@ Pass credentials via environment variables — no config file needed:
 
 ```bash
 docker run --rm \
-  -e OPSCHAIN_API_URL=https://opschain.example.com/api \
+  -e OPSCHAIN_API_URL=https://opschain.example.com \
   -e OPSCHAIN_USERNAME=alice \
   -e OPSCHAIN_PASSWORD=s3cr3t \
   limepoint/opschain-cli:latest projects list
@@ -117,18 +115,18 @@ The config file lives at `~/.opschain/config.yaml` by default. A typical multi-p
 current_profile: dev
 profiles:
   dev:
-    api_url: https://dev.opschain.example.com/api
+    api_url: https://dev.opschain.example.com
     username: alice
     password: s3cr3t
     insecure: false
     timeout: 60
     default_project: platform
   staging:
-    api_url: https://staging.opschain.example.com/api
+    api_url: https://staging.opschain.example.com
     token: eyJhbGciOiJIUzI1NiJ9...   # bearer token instead of username/password
     timeout: 120
   prod:
-    api_url: https://opschain.example.com/api
+    api_url: https://opschain.example.com
     username: deploy-bot
     password: prodsecret
     insecure: false
@@ -140,7 +138,7 @@ profiles:
 
 | Field | Type | Description |
 |---|---|---|
-| `api_url` | string | Full URL to the API root (e.g. `https://host/api`) |
+| `api_url` | string | Full URL to the API root (e.g. `https://host`) |
 | `username` | string | HTTP Basic Auth username |
 | `password` | string | HTTP Basic Auth password |
 | `token` | string | Bearer token (alternative to username/password — takes precedence when set) |
@@ -158,7 +156,7 @@ opschain config profiles add dev
 opschain config profiles add staging --token eyJhbGci...   # token-based profile
 opschain config profiles list
 opschain config profiles show dev
-opschain config profiles update dev --api-url https://new-dev.example.com/api
+opschain config profiles update dev --api-url https://new-dev.example.com
 opschain config profiles update staging --token eyJnewToken...   # refresh a token
 opschain config profiles use staging      # sets current_profile in config file
 opschain config profiles delete old-env
@@ -221,13 +219,13 @@ Environment variables override the config file — useful in CI/CD pipelines whe
 
 ```bash
 # Config-file-free usage with basic auth
-export OPSCHAIN_API_URL=https://dev.opschain.example.com/api
+export OPSCHAIN_API_URL=https://dev.opschain.example.com
 export OPSCHAIN_USERNAME=alice
 export OPSCHAIN_PASSWORD=s3cr3t
 opschain projects list
 
 # Config-file-free usage with bearer token
-export OPSCHAIN_API_URL=https://dev.opschain.example.com/api
+export OPSCHAIN_API_URL=https://dev.opschain.example.com
 export OPSCHAIN_TOKEN=eyJhbGciOiJIUzI1NiJ9...
 opschain projects list
 ```
@@ -261,7 +259,7 @@ opschain tokens login --username alice --password s3cr3t
 OPSCHAIN_USERNAME=alice OPSCHAIN_PASSWORD=s3cr3t opschain tokens login
 
 # Against a specific API URL (useful before a profile is fully set up)
-opschain tokens login --api-url https://staging.opschain.example.com/api
+opschain tokens login --api-url https://staging.opschain.example.com
 ```
 
 After a successful login, the token is written to the active profile's `token` field. You can confirm which auth method is being used with `--debug` (see §17).
@@ -1098,7 +1096,7 @@ OpsChain supports two ways to schedule automated actions.
 
 Use standard 5-field cron expressions:
 
-```
+```text
 ┌───────────── minute (0–59)
 │ ┌───────────── hour (0–23)
 │ │ ┌───────────── day of month (1–31)
@@ -1542,7 +1540,7 @@ The JSON file (or `--data` value) should be a flat or nested object — its keys
 
 ### Setting credentials in CI without config files
 
-**Option 1 — Bearer token (recommended)**
+#### Option 1 — Bearer token (recommended)
 
 Store a single `OPSCHAIN_TOKEN` secret in your CI system. Obtain the token by running `opschain tokens login` locally or in a separate authentication step.
 
@@ -1553,7 +1551,7 @@ export OPSCHAIN_TOKEN=${{ secrets.OPSCHAIN_TOKEN }}
 opschain changes list -P myproject
 ```
 
-**Option 2 — Username and password**
+#### Option 2 — Username and password
 
 ```bash
 export OPSCHAIN_API_URL=${{ secrets.OPSCHAIN_API_URL }}
@@ -1563,7 +1561,7 @@ export OPSCHAIN_PASSWORD=${{ secrets.OPSCHAIN_PASSWORD }}
 opschain changes list -P myproject
 ```
 
-**Option 3 — Login step in pipeline (token refreshed each run)**
+#### Option 3 — Login step in pipeline (token refreshed each run)
 
 ```bash
 export OPSCHAIN_API_URL=${{ secrets.OPSCHAIN_API_URL }}
@@ -1725,15 +1723,21 @@ pipeline {
 }
 ```
 
-> **Tip:** Store `OPSCHAIN_API_URL`, `OPSCHAIN_USERNAME`, `OPSCHAIN_PASSWORD`, and `OPSCHAIN_PROJECT` as **Secret Text** credentials in Jenkins (**Manage Jenkins → Credentials**) and inject them via the `credentials()` helper as shown above — never hard-code them in the `Jenkinsfile`.
+:::tip
+Store `OPSCHAIN_API_URL`, `OPSCHAIN_USERNAME`, `OPSCHAIN_PASSWORD`, and `OPSCHAIN_PROJECT` as **Secret Text** credentials in Jenkins (**Manage Jenkins → Credentials**) and inject them via the `credentials()` helper as shown above — never hard-code them in the `Jenkinsfile`.
+:::
 
-> **Tip:** `--wait-for-completion -q` prints only the change ID to stdout at completion, which is useful if you need to capture the ID up-front — for example, to record it in a build artefact before the wait finishes:
-> ```bash
-> CHANGE_ID=$(./opschain changes create \
->   -P "${OPSCHAIN_PROJECT}" -E staging -A webapp -a deploy \
->   --wait-for-completion -q)
-> echo "OpsChain change: ${CHANGE_ID}"
-> ```
+:::tip
+`--wait-for-completion -q` prints only the change ID to stdout at completion, which is useful if you need to capture the ID up-front — for example, to record it in a build artefact before the wait finishes:
+
+```bash
+CHANGE_ID=$(./opschain changes create \
+  -P "${OPSCHAIN_PROJECT}" -E staging -A webapp -a deploy \
+  --wait-for-completion -q)
+echo "OpsChain change: ${CHANGE_ID}"
+```
+
+:::
 
 ### Example: Schedule a recurring deployment from a script
 
@@ -1767,7 +1771,7 @@ opschain --debug changes create -P myproject -E dev -A myasset -a deploy 2>debug
 
 The `Authorization` header is always masked but shows the auth **scheme**, so you can confirm which method is in use:
 
-```
+```text
 DEBUG:   Authorization: Bearer ****   ← bearer token is active
 DEBUG:   Authorization: Basic ****    ← basic auth is active
 ```
@@ -1787,7 +1791,7 @@ For development instances with self-signed TLS certificates:
 ```bash
 opschain --insecure projects list
 # Or set in profile
-opschain config profiles update dev --api-url https://dev.internal/api
+opschain config profiles update dev --api-url https://dev.internal
 # Then set insecure: true in ~/.opschain/config.yaml manually, or use env var:
 OPSCHAIN_INSECURE=true opschain projects list
 ```
@@ -1796,6 +1800,7 @@ OPSCHAIN_INSECURE=true opschain projects list
 
 ### Common errors and remediation
 
+<!-- markdownlint-disable MD056 -->
 | Error | Likely cause | Fix |
 |---|---|---|
 | `failed to load config: profile 'X' not found` | Profile doesn't exist | Run `opschain config profiles list` and fix spelling, or create the profile |
@@ -1809,3 +1814,4 @@ OPSCHAIN_INSECURE=true opschain projects list
 | `context deadline exceeded` / timeout | Request took too long | Increase `timeout` in profile or use `OPSCHAIN_TIMEOUT=300` |
 | TLS handshake error | Self-signed cert | Add `insecure: true` to profile or use `--insecure` |
 | `unpermitted parameter: auth_provider` | Sending read-only fields in assignment request | Do not send `auth_provider` in assignment JSON |
+<!-- markdownlint-enable MD056 -->
