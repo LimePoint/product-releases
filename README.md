@@ -422,6 +422,9 @@ opschain projects update myproject --archived=false   # unarchive
 # Delete a project
 opschain projects delete myproject
 opschain projects delete myproject -q   # prints deleted code
+
+# Delete the project and all its children bypassing all checks, this command will only work if the user running it is part of superuser policy
+opschain projects delete myproject --ignore-in-use
 ```
 
 **Create flags:**
@@ -562,6 +565,9 @@ opschain environments update dev --description "New description"
 
 # Delete an environment
 opschain environments delete dev
+
+# Delete the environment and all its children bypassing all checks, this command will only work if the user running it is part of superuser policy
+opschain environments delete dev --ignore-in-use
 ```
 
 ### Environment properties and settings
@@ -680,6 +686,33 @@ opschain assets generate-actions logs <request-id>
 # Cancel a running generation request
 opschain assets generate-actions cancel myasset <request-id>
 ```
+
+### MintModels
+
+MintModels are snapshots of an asset's computed model data at a point in time.
+
+```bash
+# List all MintModels for an asset (newest first)
+opschain assets mintmodels list myasset
+opschain assets mintmodels list myasset -E dev
+
+# Get the latest MintModel (no ID required)
+opschain assets mintmodels get myasset
+opschain assets mintmodels get myasset -E dev
+
+# Get a specific MintModel by ID
+opschain assets mintmodels get myasset <mintmodel-id>
+
+# Download the MintModel data to a JSON file
+opschain assets mintmodels get myasset --out-file mintmodel.json
+opschain assets mintmodels get myasset -E dev --out-file /tmp/mintmodel.json
+
+# Generate a new MintModel for an asset
+opschain assets mintmodels generate myasset
+opschain assets mintmodels generate myasset -E dev
+```
+
+The `--out-file` flag writes the MintModel's JSON payload to a file, pretty-printed, with key ordering preserved as returned by the API. The confirmation message is written to stderr and can be suppressed with `-q`.
 
 ---
 
@@ -1295,11 +1328,9 @@ opschain authorisation-policies delete --id abc-uuid-123
 
 ### 14.3 Rules
 
-Rules control access at specific resource paths. There is **no bulk list endpoint** — the CLI fetches rules individually using policy relationship data.
+Rules control access at specific resource paths. Each rule is a standalone resource that can be associated with one or more policies.
 
-> **Warning:** **PATCH-atomic behaviour:** Creating, updating, or deleting a rule sends a PATCH request that replaces **all** rules on the policy atomically. The CLI handles this automatically by fetching the current rules and merging your changes, but you should be aware that concurrent rule modifications may overwrite each other.
-
-**Permitted rule fields:** `path`, `readable`, `updatable`, `executable`  
+**Permitted rule fields:** `path`, `readable`, `updatable`, `executable`, `name`  
 **Read-only fields** (do NOT send): `code`, `created_by`
 
 ```bash
@@ -1320,18 +1351,22 @@ opschain authorisation-policies rules create "Read-Only Users" \
   --readable \
   --executable
 
-# Create a rule with full access
+# Create a rule with full access and a name label
 opschain authorisation-policies rules create "DevOps Team" \
   --path "/projects/myproject" \
   --readable \
   --updatable \
-  --executable
+  --executable \
+  --name "Full project access"
 
-# Update a rule
+# Update a rule (only supply the fields you want to change)
 opschain authorisation-policies rules update "Read-Only Users" <rule-id> \
   --executable=true
 
-# Delete a rule
+opschain authorisation-policies rules update "Read-Only Users" <rule-id> \
+  --name "Project viewers"
+
+# Delete a rule (dissociates from the policy; the standalone rule remains)
 opschain authorisation-policies rules delete "Read-Only Users" <rule-id>
 ```
 
@@ -1369,7 +1404,8 @@ opschain authorisation-policies assignments remove "Read-Only Users" --all
 opschain authorisation-policies create "Project Viewers"
 opschain authorisation-policies rules create "Project Viewers" \
   --path "/projects/myproject" \
-  --readable
+  --readable \
+  --name "Read myproject"
 
 # Assign a group
 opschain authorisation-policies assignments set "Project Viewers" \
@@ -1379,7 +1415,8 @@ opschain authorisation-policies assignments set "Project Viewers" \
 opschain authorisation-policies create "Dev Deployers"
 opschain authorisation-policies rules create "Dev Deployers" \
   --path "/projects/myproject/environments/dev" \
-  --readable --updatable --executable
+  --readable --updatable --executable \
+  --name "Dev environment access"
 
 opschain authorisation-policies assignments set "Dev Deployers" \
   --users alice,bob
@@ -1388,7 +1425,8 @@ opschain authorisation-policies assignments set "Dev Deployers" \
 opschain authorisation-policies create "Platform Admins"
 opschain authorisation-policies rules create "Platform Admins" \
   --path "/" \
-  --readable --updatable --executable
+  --readable --updatable --executable \
+  --name "Full access"
 
 opschain authorisation-policies assignments set "Platform Admins" \
   --groups "platform-team"
