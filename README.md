@@ -46,8 +46,13 @@ Pre-built binaries for all platforms are published to the public [limepoint/prod
    # macOS / Linux example
    unzip opschain_darwin_arm64.zip
    chmod +x opschain
-   sudo mv opschain /usr/local/bin/
+   mkdir -p ~/.local/bin
+   mv opschain ~/.local/bin/
+   # ensure ~/.local/bin is on your PATH, e.g. add to ~/.bash_profile or ~/.zshrc:
+   #   export PATH="$HOME/.local/bin:$PATH"
    ```
+
+   If you prefer a system-wide install and have administrator rights, you can instead place the binary in `/usr/local/bin` (`sudo mv opschain /usr/local/bin/`). The user-local install above avoids needing sudo and is the better choice on locked-down machines.
 
 4. On **macOS**, the binary is signed and notarized by LimePoint — Gatekeeper will accept it automatically. If you see a security prompt, go to **System Settings → Privacy & Security** and click **Allow Anyway**.
   MintPress users: download `mintpress_<platform>.zip` from the same release page.
@@ -503,15 +508,24 @@ opschain git-remotes create \
   --user gituser \
   --password ghp_token
 
-# Create a remote with SSH key
+# Create a remote with SSH key (and optional passphrase)
 opschain git-remotes create \
   --name github-ssh \
   --url git@github.com:acme/infra.git \
-  --ssh-key-file ~/.ssh/opschain_rsa
+  --ssh-key-file ~/.ssh/opschain_rsa \
+  --passphrase 's3cr3t'
 
-# Update credentials only (name and URL are immutable after creation)
+# Register the SSH host key in the global known_hosts on create (superuser only)
+opschain git-remotes create \
+  --name github-ssh \
+  --url git@github.com:acme/infra.git \
+  --ssh-key-file ~/.ssh/opschain_rsa \
+  --add-known-host
+
+# Update credentials (name is immutable; url can now be changed)
 opschain git-remotes update github --password new_token
-opschain git-remotes update github --ssh-key-file ~/.ssh/new_key
+opschain git-remotes update github --ssh-key-file ~/.ssh/new_key --passphrase 's3cr3t'
+opschain git-remotes update github --url git@github.com:acme/infra.git --add-known-host
 
 # Archive a remote (soft-delete)
 opschain git-remotes archive github
@@ -529,7 +543,20 @@ opschain git-remotes delete github
 | `--url` | Yes | Git repository URL |
 | `--user` | No | Username for HTTPS authentication |
 | `--password` | No | Password/token for HTTPS authentication |
+| `--passphrase` | No | Passphrase for the SSH private key |
 | `--ssh-key-file` | No | Path to SSH private key file |
+| `--add-known-host` | No | Scan the SSH remote host key and register it in the global known_hosts setting (superuser only) |
+
+**Update flags:** at least one of the following must be provided.
+
+| Flag | Description |
+|---|---|
+| `--url` | New git repository URL |
+| `--user` | Username for HTTPS authentication |
+| `--password` | Password/token for HTTPS authentication |
+| `--passphrase` | Passphrase for the SSH private key |
+| `--ssh-key-file` | Path to SSH private key file |
+| `--add-known-host` | When changing to an SSH URL, scan the new host key and register it in the global known_hosts setting (superuser only) |
 
 > **Tip:** Use the `--id` flag on `get`, `archive`, `update`, and `delete` to reference a remote by UUID instead of its human-readable name.
 
@@ -596,10 +623,18 @@ Asset templates define the available asset types in OpsChain. Each template has 
 # List all available templates
 opschain templates list
 
+# List/get with archived nodes excluded from each template's nodes relationship
+opschain templates list --exclude-archived-nodes
+opschain templates get my-template-code --exclude-archived-nodes
+
 # Get a specific template
 opschain templates get my-template-code
 opschain templates get my-template-code -o json
 ```
+
+> **Note:** `--exclude-archived-nodes` (on `list` and `get`) filters archived *nodes* out of
+> each template's nodes relationship. This is distinct from `--include-archived` on `list`,
+> which controls whether whole archived templates appear.
 
 ### View the resolved template for an asset
 
@@ -654,6 +689,9 @@ opschain assets update myasset --regenerate-actions=true  # refresh actions list
 
 # Delete an asset
 opschain assets delete myasset
+
+# Force-delete, bypassing in-use checks (superuser only)
+opschain assets delete myasset --ignore-in-use
 ```
 
 ### Asset properties and settings
@@ -993,9 +1031,19 @@ opschain changes list --project myproject --utc
 
 ### 11.4 Viewing logs
 
+By default `logs` returns the **last 50 (newest)** log lines, printed oldest-first
+so the newest line is at the bottom (like `tail`). Use `--limit` to change the
+count, or `--limit 0` to return every log line.
+
 ```bash
-# Fetch logs for a specific change (root step only)
+# Fetch the last 50 log lines for a change (root step only)
 opschain changes logs b5bf89b6-6512-4f18-8b4d-cdac8a597231
+
+# Fetch the last 200 log lines
+opschain changes logs b5bf89b6 --limit 200
+
+# Fetch all log lines
+opschain changes logs b5bf89b6 --limit 0
 
 # Include logs from all child steps
 opschain changes logs b5bf89b6 --include-child-steps
@@ -1007,7 +1055,64 @@ opschain changes logs b5bf89b6 --utc
 opschain changes logs b5bf89b6 -o json
 ```
 
-### 11.5 Cancel a change
+**Follow logs in real time** with `--tail` (`-f`). It prints the initial batch,
+then streams new log lines as they arrive, stopping automatically once the change
+reaches a terminal status (`success`, `error`, `failed`, or `cancelled`). Press
+`Ctrl-C` to stop early.
+
+```bash
+# Follow a running change's logs, including child steps
+opschain changes logs b5bf89b6 --tail --include-child-steps
+```
+
+> **Note:** `--tail` requires table output and cannot be combined with `-o json`,
+> `-o yaml`, or `--quiet`.
+
+### 11.5 Reattach to a running change
+
+If you started a change **without** `--wait-for-completion` (for example with
+`changes create ... -q` to capture the ID), you can reattach later with
+`changes attach` (aliases: `watch`, `reattach`). This gives you the same
+experience as `create --wait-for-completion`: it polls the change status every
+5 seconds, reports each status transition, and — by default — streams log lines
+in real time until the change reaches a terminal status (`success`, `error`,
+`failed`, or `cancelled`). Press `Ctrl-C` to detach; this does **not** affect the
+running change.
+
+```bash
+# Attach to a running change and stream its logs until it completes
+opschain changes attach b5bf89b6-6512-4f18-8b4d-cdac8a597231
+
+# Attach but only show status transitions (no log streaming)
+opschain changes attach b5bf89b6 --show-logs=false
+
+# Attach with UTC timestamps
+opschain changes attach b5bf89b6 --utc
+
+# Scripting: wait for completion, then print only the change ID
+opschain changes attach b5bf89b6 -q
+
+# Typical flow: create detached, do other work, then reattach
+CHANGE_ID=$(opschain changes create -E dev -A myasset -a deploy -q)
+opschain changes attach "$CHANGE_ID"
+```
+
+Like `create --wait-for-completion`, `attach` exits non-zero when the change ends
+in a non-success terminal state (`error`, `cancelled`, `failed`), so it is safe
+to use in CI. If the change has already finished when you attach, its final state
+is printed and the command exits immediately.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--show-logs` | `true` | Stream log lines in real time (use `--show-logs=false` for status only) |
+| `--utc` | `false` | Display log timestamps in UTC instead of local time |
+| `--quiet` / `-q` | `false` | Wait, then print only the change ID |
+
+> **Note:** `attach` streams logs including child steps. For finer control over
+> which logs are shown (limit, root-step-only), use `changes logs --tail` (§11.4)
+> instead.
+
+### 11.6 Cancel a change
 
 ```bash
 opschain changes cancel b5bf89b6-6512-4f18-8b4d-cdac8a597231
@@ -1015,6 +1120,37 @@ opschain changes cancel b5bf89b6 -q   # prints ID on success
 ```
 
 > **Note:** Only changes in `running` or `pending` states can be cancelled.
+
+### 11.7 Continue a waiting change
+
+A change that contains a **wait step** pauses in the `waiting` state until it is
+explicitly continued. The `continue` command (alias: `cont`) finds the waiting
+step(s) for a change and continues them.
+
+```bash
+# Continue a change that has a single waiting step (auto-detected)
+opschain changes continue b5bf89b6-6512-4f18-8b4d-cdac8a597231
+
+# Continue with a message recorded against the step
+opschain changes continue b5bf89b6 -m "Sanity checks done, ok to proceed"
+
+# Continue a specific waiting step directly (skips the lookup)
+opschain changes continue b5bf89b6 --step afe3063d-3182-4c03-90c8-66ff933c15db
+
+# Continue every waiting step of a change
+opschain changes continue b5bf89b6 --all
+
+# Scripting: print continued step IDs only
+opschain changes continue b5bf89b6 -q
+```
+
+**Behaviour with multiple wait steps:** if a change has more than one step in the
+`waiting` state, `continue` lists them and exits, asking you to re-run with
+`--step <step_id>` to pick one — or `--all` to continue them all. This prevents
+accidentally releasing every wait step at once.
+
+> **Note:** Continuing a step that is not in the `waiting` state returns an error
+> from the API (e.g. `Cannot continue step because it is in the "success" state`).
 
 ---
 
@@ -1330,7 +1466,7 @@ opschain authorisation-policies delete --id abc-uuid-123
 
 Rules control access at specific resource paths. Each rule is a standalone resource that can be associated with one or more policies.
 
-**Permitted rule fields:** `path`, `readable`, `updatable`, `executable`, `name`  
+**Permitted rule fields:** `path`, `readable`, `updatable`, `executable`, `deletable`, `name`  
 **Read-only fields** (do NOT send): `code`, `created_by`
 
 ```bash
@@ -1357,11 +1493,15 @@ opschain authorisation-policies rules create "DevOps Team" \
   --readable \
   --updatable \
   --executable \
+  --deletable \
   --name "Full project access"
 
 # Update a rule (only supply the fields you want to change)
 opschain authorisation-policies rules update "Read-Only Users" <rule-id> \
   --executable=true
+
+opschain authorisation-policies rules update "Read-Only Users" <rule-id> \
+  --deletable=true
 
 opschain authorisation-policies rules update "Read-Only Users" <rule-id> \
   --name "Project viewers"
@@ -1795,7 +1935,51 @@ opschain scheduled-activities create \
 
 ---
 
-## 17. Troubleshooting
+## 17. Generating an AI agent skill
+
+The CLI can generate a "skill" that teaches an AI coding agent how to use it. A skill is a
+self-contained reference an agent loads on demand when you ask it to work with OpsChain, so it
+can run the right commands without you spelling out every flag.
+
+The skill is built by walking the binary's own command tree, so it always matches the commands,
+subcommands, and flags present in *your* build — there is nothing to keep in sync by hand.
+
+### Commands
+
+```bash
+# Write a Claude Code skill to ./.claude/skills/opschain-cli/SKILL.md
+opschain generate-skill
+
+# Write it into a specific project directory
+opschain generate-skill --out-dir ~/projects/myapp
+
+# Print to stdout instead of writing files (e.g. to pipe or inspect)
+opschain generate-skill --stdout
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--out-dir` | `.` | Directory to write into; files are placed under it (e.g. `.claude/skills/opschain-cli/SKILL.md`). |
+| `--target` | `claude` | Which agent to generate for. Currently only `claude` (Claude Code) is supported. |
+| `--stdout` | `false` | Print the generated file(s) to stdout instead of writing them to disk. |
+
+### Using the skill with Claude Code
+
+Run `opschain generate-skill` at the root of a project. It writes
+`.claude/skills/opschain-cli/SKILL.md`. Commit that directory (or copy it to `~/.claude/skills/`
+to make it available in every project), and Claude Code will pick it up automatically — when you
+ask Claude to do something with OpsChain, it loads the skill and uses the documented commands.
+
+Regenerate the skill after upgrading the CLI so it reflects any new commands or flags.
+
+> **Branding note:** A MintPress binary produces a `mintpress-cli` skill with MintPress config
+> paths and `MINTPRESS_*` environment variables. Everything adapts to the binary's branding.
+
+---
+
+## 18. Troubleshooting
 
 ### `--debug` — inspect HTTP traffic
 
