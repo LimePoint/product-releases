@@ -719,7 +719,10 @@ opschain assets generate-actions list myasset
 opschain assets generate-actions get myasset <request-id>
 
 # View logs from a generation request
+# Table columns: TIMESTAMP, CATEGORY, MESSAGE. JSON output includes
+# category and logged_at (plus template_version_history_id, node_background_task_id).
 opschain assets generate-actions logs <request-id>
+opschain assets generate-actions logs <request-id> -o json
 
 # Cancel a running generation request
 opschain assets generate-actions cancel myasset <request-id>
@@ -1611,7 +1614,34 @@ opschain events list --system
 opschain events list --user
 ```
 
-### 15.3 Advanced filtering with `--filter`
+### 15.3 Scoping to a project, environment or asset
+
+Use `-P/--project`, `-E/--environment` and `-A/--asset` to scope events to a node in the project hierarchy — the same flags used by `changes list`. Scoping is **inclusive of descendants**: scoping to an environment also returns the events emitted by its assets, changes and steps.
+
+```bash
+# All events for a project (and everything nested under it)
+opschain events list -P myproject
+
+# All events for an environment (and its assets/changes/steps)
+opschain events list -P myproject -E dev
+
+# Events for a specific asset within an environment
+opschain events list -P myproject -E dev -A my_asset
+
+# Events for an asset in any environment of the project
+opschain events list -P myproject -A my_asset
+```
+
+Notes:
+
+- `--environment` and `--asset` both require `--project` (via the flag, the `OPSCHAIN_DEFAULT_PROJECT` env var, or a profile `default_project`).
+- These flags translate to `event_node_path` filters for you, so you don't have to remember the `_eq` vs `_start` distinction (using `_eq` on an environment would silently drop its assets' events — scoping handles this correctly).
+- Scoping flags compose with the convenience filters and `--filter` (all AND-ed together), e.g. `opschain events list -P myproject -E dev --type "change.completed"`.
+- The listing table includes a `NODE PATH` column showing each event's `event_node_path`.
+
+For hand-rolled `event_node_path` filters, see the `--filter` section below.
+
+### 15.4 Advanced filtering with `--filter`
 
 The `--filter` flag maps directly to OpsChain's Ransack-style filter parameters. The format is `field_predicate=value`.
 
@@ -1657,7 +1687,7 @@ opschain events list \
 
 Multiple `--filter` flags are AND-ed together.
 
-### 15.4 Sorting
+### 15.5 Sorting
 
 ```bash
 # Sort by created_at ascending (oldest first)
@@ -1669,14 +1699,14 @@ opschain events list --sort "type asc"
 
 Default sort is `created_at desc` (newest first).
 
-### 15.5 Get a specific event
+### 15.6 Get a specific event
 
 ```bash
 opschain events get <event-id>
 opschain events get eb89e69e-5feb-4751-abe7-8a2fa53ce42e --output json
 ```
 
-### 15.6 Creating a custom event
+### 15.7 Creating a custom event
 
 You can emit custom events — useful for marking external milestones (pipeline stages, approvals, deployments from other tools) in the OpsChain audit trail.
 
