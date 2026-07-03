@@ -918,6 +918,9 @@ opschain changes create -E dev -A myasset -a deploy -w --show-logs
 # Stream logs with UTC timestamps
 opschain changes create -E dev -A myasset -a deploy -w --show-logs --utc
 
+# Skip steps matching a glob pattern (repeat the flag for multiple patterns)
+opschain changes create -E dev -A myasset -a deploy --skip-steps 'steps/to/skip/**'
+
 # Capture the change ID for later (quiet mode, no --wait)
 CHANGE_ID=$(opschain changes create -E dev -A myasset -a deploy -q)
 ```
@@ -957,6 +960,7 @@ opschain changes create \
 | `--property-overrides` | | No | JSON object of property overrides |
 | `--settings-overrides` | | No | JSON object of settings overrides |
 | `--metadata` | | No | JSON object attached to the change |
+| `--skip-steps` | | No | Glob pattern of step names to skip during execution (repeatable) |
 | `--build-without-cache` | | No | Build container without Docker cache |
 | `--wait-for-completion` | `-w` | No | Poll every 5 seconds until terminal state |
 | `--show-logs` | | No | Stream logs in real-time (requires `-w`) |
@@ -1203,7 +1207,21 @@ opschain workflows delete-drafts deploy-app
 
 # List versions of a workflow
 opschain workflows versions deploy-app
+
+# Create a new version from an updated YAML file
+opschain workflows versions create deploy-app --source-yaml-file deploy-app.yaml
+
+# Create/update a version and expand multi-target steps + replace properties,
+# optionally supplying property values used during resolution
+opschain workflows versions create deploy-app --source-yaml-file deploy-app.yaml \
+  --resolve-properties --property-overrides '{"replicas": 3}'
+opschain workflows versions update deploy-app 2 --source-yaml-file deploy-app.yaml \
+  --resolve-properties --property-overrides '{"replicas": 3}'
 ```
+
+`--resolve-properties` expands multi-target steps and replaces properties in the stored
+version; `--property-overrides` (a JSON object) supplies the property values used during that
+resolution. Both are available on `workflows versions create` and `workflows versions update`.
 
 ### 12.2 Running workflows
 
@@ -1227,6 +1245,10 @@ opschain workflows runs create --code deploy-app --version 2 \
 opschain workflows runs create --code deploy-app --version 2 \
   --metadata '{"triggered_by": "jenkins", "build_number": "1234"}'
 
+# Skip steps matching a glob pattern (repeat the flag for multiple patterns)
+opschain workflows runs create --code deploy-app --version 2 \
+  --skip-steps 'steps/to/skip/**'
+
 # Capture the run ID
 RUN_ID=$(opschain workflows runs create --code deploy-app --version 2 -q)
 
@@ -1244,6 +1266,10 @@ opschain workflows runs logs $RUN_ID --utc
 # Retry a failed/cancelled run
 opschain workflows runs retry $RUN_ID
 opschain workflows runs retry $RUN_ID --wait-for-completion --show-logs
+
+# Retry, overriding the skip_steps of the run being retried
+# (omit --skip-steps to inherit the original run's skip_steps unchanged)
+opschain workflows runs retry $RUN_ID --skip-steps 'steps/to/skip/**'
 
 # Cancel a running workflow run
 opschain workflows runs cancel $RUN_ID
@@ -1376,10 +1402,18 @@ opschain scheduled-activities create \
   --schedule "0 0 * * 0" \
   --repeat
 
+# Skip steps matching a glob pattern on the scheduled runs (repeatable)
+opschain scheduled-activities create \
+  --type scheduled_change \
+  -E dev -A myasset -a deploy \
+  --schedule "0 2 * * *" \
+  --skip-steps 'steps/to/skip/**'
+
 # Update a scheduled activity
 opschain scheduled-activities update <id> --schedule "0 3 * * *"
 opschain scheduled-activities update <id> --enabled=false    # disable
 opschain scheduled-activities update <id> --git-rev develop
+opschain scheduled-activities update <id> --skip-steps 'steps/to/skip/**'
 
 # Delete a scheduled activity
 opschain scheduled-activities delete <id>
