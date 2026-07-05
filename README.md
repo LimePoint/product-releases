@@ -1999,7 +1999,105 @@ opschain scheduled-activities create \
 
 ---
 
-## 17. Generating an AI agent skill
+## 17. Support Bundles (Diagnostics)
+
+When a change fails and you need to raise a defect or feature request with LimePoint support,
+`support bundle` collects everything support typically asks for — in one command — so you don't
+have to hunt down the change, its logs, the properties it ran with, and version numbers by hand.
+
+```bash
+# Write <binary>-support-<change-id>.zip in the current directory
+opschain support bundle 3a646e8e-ce5c-499a-8488-2d0377c6a980
+
+# Choose the output path
+opschain support bundle <change-id> --out-file ./ticket-1234.zip
+
+# Just the human-readable summary, printed to stdout (paste into a ticket)
+opschain support bundle <change-id> --summary-only
+
+# Collect everything: full logs for all steps
+opschain support bundle <change-id> --log-limit 0 --step-logs all
+```
+
+### What it collects
+
+Collection is **best-effort**: if a piece can't be fetched (permissions, a change with no
+asset, etc.) it is noted in `manifest.json` and `SUMMARY.md` rather than failing the command.
+
+- **Change** — status, action, git remote/rev/commit, who ran it, timestamps, and its metadata
+  (comments + any custom metadata, surfaced in `SUMMARY.md`; also present verbatim in `change.json`).
+- **Steps** — the step tree with per-step status.
+- **Logs** — the change-level log (`logs/change.log`) plus per-step logs under `logs/steps/`. By
+  default only the genuinely failed step(s) (status `error`/`failed`) are captured — not the
+  `aborted`/`cancelled` steps that were merely stopped downstream of the failure. Use
+  `--step-logs all` for every step or `--step-logs none` to skip per-step logs.
+- **Properties & settings** — the *effective* (converged) properties the change ran with; the
+  *initial* and *final* converged change properties (as captured pre-run and post-run); the
+  change's `override` properties/settings; and the `project`/`environment`/`asset` level
+  properties and settings.
+- **Template** — the template and template version the change ran against (`template/`), including
+  the git remote/rev/commit that pins the source.
+- **MintModel** (mintmodel changes only) — the rendered MintModel JSON and the source ERB
+  (`mintmodel/mintmodel.json` and `mintmodel/mintmodel.json.erb`).
+- **Server info** — OpsChain version, API version, DB version, runner image, licence.
+- **CLI version** — version, commit, build date.
+- **Recent run history** — the last 5 runs of this change's action at the same node (id, status,
+  date), plus the most recent successful run — so support can see the trend and when it last
+  worked. Shown in `SUMMARY.md`.
+- **Events** — the last 10 events at **each node level** the change involves (asset, environment,
+  project), collected separately per level (`events/<level>.json`) and summarised in `SUMMARY.md`.
+  Since events can't be listed by change id, this per-level view surfaces what happened around the
+  failure at every scope.
+
+### Credentials
+
+The CLI does **not** perform any client-side redaction — it collects what the OpsChain API
+returns. OpsChain already redacts sensitive values in logs and settings server-side, and
+credentials are encrypted at rest (AES) and are not decryptable by support, so the collected
+artifacts are safe to attach to a ticket.
+
+### Flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `--out-file` | `<binary>-support-<change-id>.zip` | Output path. A `.md` file when combined with `--summary-only`. |
+| `--summary-only` | `false` | Emit only the Markdown summary (to `--out-file`, or stdout if unset); no archive. |
+| `--log-limit` | `2000` | Maximum log lines to collect **per log file** (`logs/change.log` and each step log). `0` means all; when capped, the newest lines are kept. |
+| `--step-logs` | `failed` | Which per-step logs to collect under `logs/steps/`: `failed` (only `error`/`failed` steps — the actual failures, not downstream `aborted`/`cancelled` steps), `all` (every step), or `none` (skip). |
+| `--utc` | `false` | Render `logs/` and `SUMMARY.md` timestamps in UTC. By default they use the local timezone of the machine running the CLI; each timestamp is labelled with its zone. |
+
+As the bundle makes several API calls, live progress is printed to **stderr** with the elapsed
+time on each line (`[  0.8s] … Fetching change log`), so the command doesn't look hung and you can see
+how long each phase took; the final line reports the total (`... (took 4.3s)`). stdout stays
+clean for `--summary-only`. With `-q`/`--quiet` the progress is suppressed and the command
+prints only the written archive path (useful for scripting).
+
+### Bundle contents
+
+The archive contains a single top-level folder named after the archive (so unzipping creates
+one tidy directory rather than scattering files into the current directory):
+
+```
+<binary>-support-<change-id>.zip
+└── <binary>-support-<change-id>/
+    ├── SUMMARY.md            # human-readable, ticket-ready
+    ├── change.json
+    ├── steps.json
+    ├── logs/
+    │   ├── change.log        # change-level log (no child steps)
+    │   └── steps/            # per-step logs, e.g. 2-run-error.log (failed step(s) by default)
+    ├── info.json
+    ├── events/              # per node level: asset.json, environment.json, project.json (last 10 each)
+    ├── properties/          # effective.json, initial.json, final.json, override.json, project.json, environment.json, asset.json
+    ├── settings/            # override.json, project.json, environment.json, asset.json
+    ├── template/            # template.json, template_version.json
+    ├── mintmodel/           # mintmodel.json + mintmodel.json.erb (mintmodel changes only)
+    └── manifest.json        # what was/wasn't collected, CLI version, timestamp
+```
+
+---
+
+## 18. Generating an AI agent skill
 
 The CLI can generate a "skill" that teaches an AI coding agent how to use it. A skill is a
 self-contained reference an agent loads on demand when you ask it to work with OpsChain, so it
@@ -2043,7 +2141,7 @@ Regenerate the skill after upgrading the CLI so it reflects any new commands or 
 
 ---
 
-## 18. Troubleshooting
+## 19. Troubleshooting
 
 ### `--debug` — inspect HTTP traffic
 
