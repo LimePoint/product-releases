@@ -6,7 +6,7 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
 
 ## 1. Introduction
 
-The OpsChain CLI (`opschain`) is the primary tool for interacting with the OpsChain API from the command line. OpsChain is a GitOps-based, event-driven change manager — it can orchestrate any repeatable, auditable change across your systems: software deployments, configuration updates, compliance remediations, database migrations, and more. The CLI allows you to manage every resource in your OpsChain instance: projects, environments, assets, workflows, changes, scheduled activities, and authorisation policies.
+The OpsChain CLI (`opschain`) drives the OpsChain API from the command line. OpsChain is a GitOps-based, event-driven change manager: it orchestrates repeatable, auditable changes across your systems — software deployments, configuration updates, compliance remediations, database migrations. Use the CLI to manage every resource in your instance: projects, environments, assets, workflows, changes, scheduled activities, and authorisation policies.
 
 ### Multi-brand note
 
@@ -19,7 +19,7 @@ The same binary codebase ships as two branded products:
 
 Branding is detected automatically from the binary filename.
 
-> **Note:** All examples in this guide use `opschain`. Every command works identically with `mintpress` — simply substitute the binary name. The two binaries are interchangeable in all contexts.
+> **Note:** All examples use `opschain`. Every command works identically with `mintpress` — substitute the binary name.
 
 ---
 
@@ -428,7 +428,7 @@ opschain projects update myproject --archived=false   # unarchive
 opschain projects delete myproject
 opschain projects delete myproject -q   # prints deleted code
 
-# Delete the project and all its children bypassing all checks, this command will only work if the user running it is part of superuser policy
+# Force-delete the project and all its children, bypassing all in-use checks (superuser policy only)
 opschain projects delete myproject --ignore-in-use
 ```
 
@@ -593,7 +593,7 @@ opschain environments update dev --description "New description"
 # Delete an environment
 opschain environments delete dev
 
-# Delete the environment and all its children bypassing all checks, this command will only work if the user running it is part of superuser policy
+# Force-delete the environment and all its children, bypassing all in-use checks (superuser policy only)
 opschain environments delete dev --ignore-in-use
 ```
 
@@ -648,7 +648,7 @@ opschain assets template myasset -E dev
 
 ## 9. Assets
 
-Assets are instances of templates, representing anything you want to manage as a discrete unit — services, databases, configuration targets, compliance controls, or any other entity. They are scoped to a project and optionally to an environment.
+Assets are instances of templates — a service, database, configuration target, compliance control, or anything else you manage as a discrete unit. Each asset is scoped to a project, and optionally to an environment.
 
 > **Note:** Commands in this section require a project code. Either pass `--project <code>` / `-P <code>` on each command, or set `default_project` in your active profile (see §3.1) to omit it entirely.
 
@@ -664,6 +664,11 @@ opschain assets list -E dev
 # Get an asset by code
 opschain assets get myasset
 opschain assets get myasset -E dev
+
+# List the actions you can run against an asset — use these as --action values for changes create/execute
+opschain assets actions myasset
+opschain assets actions myasset -E dev
+opschain assets actions myasset -o json   # full per-action detail (full_path, stage_step, ...)
 
 # Create an asset
 opschain assets create \
@@ -895,13 +900,13 @@ opschain agents converged-properties myagent -P myproject \
 
 ### 11.1 What a change is
 
-A **change** represents the execution of a single action against a project, environment, or asset. Changes are the primary mechanism through which OpsChain drives any automated process — deployments, configuration updates, compliance checks, data migrations, or custom scripts. Every change is tracked with a unique ID, status code, start/end timestamps, and a log stream.
+A **change** runs a single action against a project, environment, or asset. Changes are how OpsChain runs an automated process — deployments, configuration updates, compliance checks, data migrations, or custom scripts. Each change has a unique ID, a status code, start/end timestamps, and a log stream.
 
 Terminal statuses: `success`, `error`, `cancelled`, `failed`.
 
 ### 11.2 Creating changes
 
-#### Asset scope (simplest — recommended starting point)
+#### Asset scope (recommended starting point)
 
 For assets, git information (remote, rev, template version) is derived automatically from the asset's configuration.
 
@@ -918,10 +923,13 @@ opschain changes create -E dev -A myasset -a deploy -w --show-logs
 # Stream logs with UTC timestamps
 opschain changes create -E dev -A myasset -a deploy -w --show-logs --utc
 
+# Wait, and release any wait step automatically instead of pausing
+opschain changes create -E dev -A myasset -a deploy -w --auto-continue
+
 # Skip steps matching a glob pattern (repeat the flag for multiple patterns)
 opschain changes create -E dev -A myasset -a deploy --skip-steps 'steps/to/skip/**'
 
-# Capture the change ID for later (quiet mode, no --wait)
+# Capture the change ID for later (quiet mode, no -w)
 CHANGE_ID=$(opschain changes create -E dev -A myasset -a deploy -q)
 ```
 
@@ -964,10 +972,61 @@ opschain changes create \
 | `--build-without-cache` | | No | Build container without Docker cache |
 | `--wait-for-completion` | `-w` | No | Poll every 5 seconds until terminal state |
 | `--show-logs` | | No | Stream logs in real-time (requires `-w`) |
+| `--auto-continue` | | No | Continue any wait step the change hits, so it runs through to completion without pausing (requires `-w`) |
 | `--utc` | | No | Display timestamps in UTC |
 | `--from-file` | | No | Load entire request from a JSON file |
 
-### 11.3 Listing and filtering changes
+### 11.3 Run one action across many assets (bulk)
+
+`changes execute` (alias `exec`) runs one action against multiple assets, optionally across several environments, creating one change per asset. It acts on an asset only if that asset supports the action. Assets that don't support it, or don't exist in the environment, are skipped and listed in the summary — they don't fail the run.
+
+`changes` aliases to `change`, so `opschain change execute …` works too.
+
+```bash
+# Run 'Shutdown' on three named assets in dev
+opschain change execute -E dev --action Shutdown --assets db1,db2,web1
+
+# Fan out across multiple environments (env × asset matrix)
+opschain change execute -E dev,staging --action Shutdown --assets db1,web1
+
+# Target EVERY asset in the environment(s) — quote the '*' so the shell doesn't expand it
+opschain change execute -E dev --action Shutdown --assets '*'
+
+# Preview what would happen without creating any changes
+opschain change execute -E dev --action Shutdown --assets '*' --dry-run
+
+# Create the changes, then wait for all of them to finish
+opschain change execute -E dev --action Shutdown --assets db1,db2 --wait-for-completion
+
+# Wait, and release any wait step each change hits so none of them stall
+opschain change execute -E dev --action Shutdown --assets db1,db2 -w --auto-continue
+
+# Scripting: print only the created change IDs
+opschain change execute -E dev --action Shutdown --assets db1,db2 -q
+```
+
+**Behaviour & flags:**
+
+| Flag | Short | Required | Description |
+|---|---|---|---|
+| `--project` | `-P` | Yes | Project code (or `default_project` in the profile) |
+| `--environment` | `-E` | Yes | One or more environment codes, comma-separated |
+| `--assets` | | Yes | Comma-separated asset codes, or `'*'` for every asset in the environment(s) — quote it so your shell doesn't expand it. Omitting `--assets` is an error; there is no implicit "all", so you can't target a whole environment by mistake. (`'*'` rather than `all` keeps a real asset code named `all` unambiguous.) |
+| `--action` | `-a` | Yes | Action to run; matched against each asset's advertised action name/path (see `assets actions`) |
+| `--dry-run` | | No | Show the matched/skipped matrix without creating any changes |
+| `--wait-for-completion` | `-w` | No | Poll every created change to a terminal state and report final statuses. On an interactive terminal the summary table refreshes in place every 5 seconds, updating each change's status live (`pending`→`running`→`success`/`error`). When output is piped, JSON/YAML, or `-q`, it polls silently and prints once at the end |
+| `--auto-continue` | | No | While waiting, continue any wait step a created change hits, so none of them stall in the `waiting` state (requires `--wait-for-completion`) |
+| `--template-version` | `-t` | No | Template version override (asset scope) |
+| `--metadata` / `--property-overrides` / `--settings-overrides` | | No | JSON objects applied to every created change |
+| `--skip-steps` | | No | Glob pattern of step names to skip (repeatable) |
+| `--build-without-cache` | | No | Build container without Docker cache |
+
+- Output is a per-target summary table (`ENVIRONMENT`, `ASSET`, `RESULT`, `CHANGE ID`, `DETAIL`); `-o json`/`yaml` emit it structured; `-q` prints only the created change IDs.
+- A `skipped` asset's `DETAIL` says why: `action not supported`, or `not found in project '<P>' environment '<E>'` (the resolved project is named, so a wrong `-P`/`default_project` is easy to spot). An unexpected API failure (auth, server error) is a separate `error` row showing the message, not a skip.
+- **Exit code:** `0` when every target either started a change or was cleanly skipped. Non-zero if any change failed to create, an asset lookup errored (non-404), or (with `--wait`) any change ended in a non-`success` terminal state.
+- No interleaved log streaming for bulk runs — watch an individual change with `changes attach <id>`.
+
+### 11.4 Listing and filtering changes
 
 By default, `changes list` returns the 15 most-recent changes across all scopes.
 
@@ -998,7 +1057,7 @@ opschain changes list --sort "status_code asc"
 
 #### Advanced filtering with Ransack predicates
 
-Use `--filter "field_predicate=value"` for flexible server-side filtering. Multiple `--filter` flags are combined with AND logic.
+Use `--filter "field_predicate=value"` for server-side filtering. Multiple `--filter` flags are combined with AND logic.
 
 ```bash
 # Changes created after a specific date
@@ -1036,7 +1095,7 @@ opschain changes list --project myproject --utc
 
 **Available Ransack predicates:** `_eq`, `_not_eq`, `_cont`, `_start`, `_end`, `_gt`, `_lt`, `_gteq`, `_lteq`
 
-### 11.4 Viewing logs
+### 11.5 Viewing logs
 
 By default `logs` returns the **last 50 (newest)** log lines, printed oldest-first
 so the newest line is at the bottom (like `tail`). Use `--limit` to change the
@@ -1075,7 +1134,7 @@ opschain changes logs b5bf89b6 --tail --include-child-steps
 > **Note:** `--tail` requires table output and cannot be combined with `-o json`,
 > `-o yaml`, or `--quiet`.
 
-### 11.5 Reattach to a running change
+### 11.6 Reattach to a running change
 
 If you started a change **without** `--wait-for-completion` (for example with
 `changes create ... -q` to capture the ID), you can reattach later with
@@ -1112,6 +1171,7 @@ is printed and the command exits immediately.
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--show-logs` | `true` | Stream log lines in real time (use `--show-logs=false` for status only) |
+| `--auto-continue` | `false` | Continue any wait step the change hits while you're attached, so it runs through to completion without pausing |
 | `--utc` | `false` | Display log timestamps in UTC instead of local time |
 | `--quiet` / `-q` | `false` | Wait, then print only the change ID |
 
@@ -1119,7 +1179,7 @@ is printed and the command exits immediately.
 > which logs are shown (limit, root-step-only), use `changes logs --tail` (§11.4)
 > instead.
 
-### 11.6 Cancel a change
+### 11.7 Cancel a change
 
 ```bash
 opschain changes cancel b5bf89b6-6512-4f18-8b4d-cdac8a597231
@@ -1128,7 +1188,7 @@ opschain changes cancel b5bf89b6 -q   # prints ID on success
 
 > **Note:** Only changes in `running` or `pending` states can be cancelled.
 
-### 11.7 Continue a waiting change
+### 11.8 Continue a waiting change
 
 A change that contains a **wait step** pauses in the `waiting` state until it is
 explicitly continued. The `continue` command (alias: `cont`) finds the waiting
@@ -1159,11 +1219,20 @@ accidentally releasing every wait step at once.
 > **Note:** Continuing a step that is not in the `waiting` state returns an error
 > from the API (e.g. `Cannot continue step because it is in the "success" state`).
 
+**Continue automatically while waiting:** to run a change straight through its wait
+steps without a manual `continue`, pass `--auto-continue` alongside `--wait-for-completion`
+on `create` or `execute`, or on `attach`. As the poll loop sees a change
+enter the `waiting` state, it continues every waiting step and keeps polling. Each
+released step is logged to stderr (`auto-continue: continued waiting step <id> of change <id>`).
+A step that can't be continued — for example one that has already moved on — is logged and
+skipped rather than aborting the wait. Without `--auto-continue`, a waiting run sits at
+`waiting` until you continue it in another terminal.
+
 ---
 
 ## 12. Workflows
 
-Workflows are reusable automation scripts written in YAML that can orchestrate complex multi-step actions. They are versioned and project-scoped.
+Workflows are reusable, versioned automation scripts written in YAML that orchestrate multi-step actions. They are project-scoped.
 
 > **Note:** Commands in this section require a project code. Either pass `--project <code>` / `-P <code>` on each command, or set `default_project` in your active profile (see §3.1) to omit it entirely.
 
@@ -1755,7 +1824,7 @@ opschain events create \
   --type "deploy.completed" \
   --data '{"environment": "prod", "version": "v2.1.0", "triggered_by": "github-actions"}'
 
-# Load complex data from a file
+# Load data from a file
 opschain events create --type "deploy.completed" --from-file ./event-payload.json
 
 # Capture the new event ID for later lookup
@@ -2012,7 +2081,7 @@ opschain support bundle 3a646e8e-ce5c-499a-8488-2d0377c6a980
 # Choose the output path
 opschain support bundle <change-id> --out-file ./ticket-1234.zip
 
-# Just the human-readable summary, printed to stdout (paste into a ticket)
+# Only the human-readable summary, printed to stdout (paste into a ticket)
 opschain support bundle <change-id> --summary-only
 
 # Collect everything: full logs for all steps
@@ -2194,6 +2263,7 @@ OPSCHAIN_INSECURE=true opschain projects list
 | `--asset requires --project to be specified` | Forgot `-P` flag | Add `-P <project_code>` to the command |
 | `cannot specify both --schedule and --run-at` | Conflicting scheduling flags | Use one or the other |
 | `--show-logs can only be used with --wait-for-completion` | Missing `-w` flag | Add `--wait-for-completion` or `-w` |
+| `--auto-continue can only be used with --wait-for-completion` | `--auto-continue` on `changes create`/`execute`/`attach` without the wait flag | Add `--wait-for-completion` or `-w` |
 | `invalid JSON data` | Malformed JSON in `--data` / `--property-overrides` | Validate JSON with `echo '...' \| jq .` |
 | `context deadline exceeded` / timeout | Request took too long | Increase `timeout` in profile or use `OPSCHAIN_TIMEOUT=300` |
 | TLS handshake error | Self-signed cert | Add `insecure: true` to profile or use `--insecure` |
