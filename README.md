@@ -670,6 +670,10 @@ opschain assets actions myasset
 opschain assets actions myasset -E dev
 opschain assets actions myasset -o json   # full per-action detail (full_path, stage_step, ...)
 
+# Expand every action's nested step tree (all levels)
+opschain assets actions myasset --tree
+opschain assets actions myasset --tree -q  # one runnable code per line, every node
+
 # Create an asset
 opschain assets create \
   --code myasset \
@@ -698,6 +702,29 @@ opschain assets delete myasset
 # Force-delete, bypassing in-use checks (superuser only)
 opschain assets delete myasset --ignore-in-use
 ```
+
+### Viewing an action's steps
+
+`opschain assets actions myasset` lists the top-level actions. An action is usually built from
+nested steps, and those steps often have steps of their own. Add `--tree` to expand the whole
+structure:
+
+```
+├─ Binaries  [mintmodel:binaries]
+│  ├─ Install Software Binaries  [mintmodel:install_software_binaries]
+│  │  ├─ Install Binaries  [mintmodel:install_binaries_for_custwprd1oam01]
+│  │  │  └─ Install OracleJava Binaries  [mintmodel:install_oraclejava_binaries_for_custwprd1oam01]
+```
+
+Each node is labelled `<name>  [<code>]`. The name is what you read; the code in brackets is the
+identifier you pass to `changes create --action` / `changes execute --action` to run that step on
+its own. The two match for actions defined in `actions.rb`; for MintModel-generated actions the
+names repeat (several "Install Binaries" steps, for example), so the code is what tells them
+apart and what you run.
+
+The tree mirrors what the API returns, so a step that also exists as a top-level action appears
+both places. `-o json` and `-o yaml` return the same tree with the full node detail; `--tree -q`
+prints one code per line for every node, ready to pipe into a change.
 
 ### Asset properties and settings
 
@@ -920,6 +947,9 @@ opschain changes create -E dev -A myasset -a deploy --wait-for-completion
 # Wait and stream logs in real-time
 opschain changes create -E dev -A myasset -a deploy -w --show-logs
 
+# Wait and watch the step tree update in place instead of streaming logs
+opschain changes create -E dev -A myasset -a deploy -w --show-steps
+
 # Stream logs with UTC timestamps
 opschain changes create -E dev -A myasset -a deploy -w --show-logs --utc
 
@@ -972,9 +1002,32 @@ opschain changes create \
 | `--build-without-cache` | | No | Build container without Docker cache |
 | `--wait-for-completion` | `-w` | No | Poll every 5 seconds until terminal state |
 | `--show-logs` | | No | Stream logs in real-time (requires `-w`) |
+| `--show-steps` | | No | Show a tree of the change's steps that updates in place as they run (requires `-w`; cannot be combined with `--show-logs`) |
 | `--auto-continue` | | No | Continue any wait step the change hits, so it runs through to completion without pausing (requires `-w`) |
 | `--utc` | | No | Display timestamps in UTC |
 | `--from-file` | | No | Load entire request from a JSON file |
+
+#### Watch the step tree
+
+`--show-steps` renders the change's steps as a tree and refreshes it in place every
+5 seconds while you wait, so you can see which step the change is on instead of a single
+overall status. Each node shows the step's name, status, and how long it has been running:
+
+```
+Change running  [+01:20]
+└─ ✔ Provision  [success] (0:12)
+   ├─ ● Deploy binaries  [running] (0:47)
+   │  └─ ● Copy files  [running] (0:30)
+   └─ · Verify  [queued]
+```
+
+Nested steps sit under their parents. The glyph marks state — `✔` success, `✖` error/failed,
+`●` running, `⏸` waiting, `⊘` cancelled/aborted, `·` queued. On an interactive terminal the
+tree redraws over itself; when output is piped or redirected, status transitions print to
+stderr as usual and the finished tree is printed once at the end.
+
+`--show-steps` requires `-w` and can't be combined with `--show-logs` — both take over the
+screen, so pick one.
 
 ### 11.3 Run one action across many assets (bulk)
 
@@ -1001,6 +1054,9 @@ opschain change execute -E dev --action Shutdown --assets db1,db2 --wait-for-com
 # Wait, and release any wait step each change hits so none of them stall
 opschain change execute -E dev --action Shutdown --assets db1,db2 -w --auto-continue
 
+# Wait, and watch each change's step tree update in place (interactive terminal)
+opschain change execute -E dev --action Shutdown --assets db1,db2 -w --show-steps
+
 # Scripting: print only the created change IDs
 opschain change execute -E dev --action Shutdown --assets db1,db2 -q
 ```
@@ -1015,6 +1071,7 @@ opschain change execute -E dev --action Shutdown --assets db1,db2 -q
 | `--action` | `-a` | Yes | Action to run; matched against each asset's advertised action name/path (see `assets actions`) |
 | `--dry-run` | | No | Show the matched/skipped matrix without creating any changes |
 | `--wait-for-completion` | `-w` | No | Poll every created change to a terminal state and report final statuses. On an interactive terminal the summary table refreshes in place every 5 seconds, updating each change's status live (`pending`→`running`→`success`/`error`). When output is piped, JSON/YAML, or `-q`, it polls silently and prints once at the end |
+| `--show-steps` | | No | While waiting, show each created change's step tree and refresh it in place instead of the flat status table. Interactive terminal only — piped/JSON/`-q` runs keep the summary (requires `-w`) |
 | `--auto-continue` | | No | While waiting, continue any wait step a created change hits, so none of them stall in the `waiting` state (requires `--wait-for-completion`) |
 | `--template-version` | `-t` | No | Template version override (asset scope) |
 | `--metadata` / `--property-overrides` / `--settings-overrides` | | No | JSON objects applied to every created change |
@@ -1025,6 +1082,7 @@ opschain change execute -E dev --action Shutdown --assets db1,db2 -q
 - A `skipped` asset's `DETAIL` says why: `action not supported`, or `not found in project '<P>' environment '<E>'` (the resolved project is named, so a wrong `-P`/`default_project` is easy to spot). An unexpected API failure (auth, server error) is a separate `error` row showing the message, not a skip.
 - **Exit code:** `0` when every target either started a change or was cleanly skipped. Non-zero if any change failed to create, an asset lookup errored (non-404), or (with `--wait`) any change ended in a non-`success` terminal state.
 - No interleaved log streaming for bulk runs — watch an individual change with `changes attach <id>`.
+- `--show-steps` (with `-w`, on an interactive terminal) replaces the live status table with one section per change — a header line (`[env] asset (change-id) status`) followed by that change's step tree, all redrawing in place. Skipped and errored targets stay as one-line entries. Off a TTY, or with `-q`/`-o json,yaml`, it prints a note and falls back to the summary. See §11.2 for the glyphs.
 
 ### 11.4 Listing and filtering changes
 
@@ -1152,6 +1210,9 @@ opschain changes attach b5bf89b6-6512-4f18-8b4d-cdac8a597231
 # Attach but only show status transitions (no log streaming)
 opschain changes attach b5bf89b6 --show-logs=false
 
+# Attach and watch the step tree update in place instead of streaming logs
+opschain changes attach b5bf89b6 --show-steps
+
 # Attach with UTC timestamps
 opschain changes attach b5bf89b6 --utc
 
@@ -1171,6 +1232,7 @@ is printed and the command exits immediately.
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--show-logs` | `true` | Stream log lines in real time (use `--show-logs=false` for status only) |
+| `--show-steps` | `false` | Show a tree of the change's steps that updates in place as they run (turns off log streaming; the two can't be combined) |
 | `--auto-continue` | `false` | Continue any wait step the change hits while you're attached, so it runs through to completion without pausing |
 | `--utc` | `false` | Display log timestamps in UTC instead of local time |
 | `--quiet` / `-q` | `false` | Wait, then print only the change ID |
