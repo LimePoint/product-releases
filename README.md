@@ -99,7 +99,9 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [Commands](#commands-5)
     - [Flags](#flags-1)
     - [Using the skill with Claude Code](#using-the-skill-with-claude-code)
-19. [Troubleshooting](#19-troubleshooting)
+19. [Secrets](#19-secrets)
+    - [Commands](#commands-6)
+20. [Troubleshooting](#20-troubleshooting)
     - [`--debug` — inspect HTTP traffic](#--debug--inspect-http-traffic)
     - [`--stacktrace` — Go stack trace on error](#--stacktrace--go-stack-trace-on-error)
     - [`--insecure` — self-signed certificates](#--insecure--self-signed-certificates)
@@ -2649,7 +2651,80 @@ Regenerate the skill after upgrading the CLI so it reflects any new commands or 
 
 ---
 
-## 19. Troubleshooting
+## 19. Secrets
+
+OpsChain can encrypt values and read or write them in a secret vault. An encrypted value is safe to store in properties or settings; OpsChain decrypts it at run time.
+
+### Commands
+
+```bash
+# Encrypt a value (returns the OpsChain-encrypted form)
+opschain secrets encrypt --value "my-secret-value"
+
+# Print just the encrypted string, for scripting
+opschain secrets encrypt --value "my-secret-value" -q
+
+# Store a value in a vault, identifying the node by UUID
+opschain secrets store \
+  --vault-owner-id cbde41d5-0cf2-45be-b4c2-04731c56bc0e \
+  --vault-path secret-vault://path/to/key \
+  --value "my-secret-value"
+
+# Store a value, identifying the node by project code (resolved to its UUID)
+opschain secrets store -P myproject \
+  --vault-path secret-vault://path/to/key \
+  --value "my-secret-value"
+
+# Overwrite an existing value at the path
+opschain secrets store -P myproject \
+  --vault-path secret-vault://path/to/key \
+  --value "new-value" --replace
+
+# Resolve (decrypt) a value from the vault — pass the encrypted value stored at the path
+opschain secrets resolve -P myproject \
+  --vault-path secret-vault://path/to/key \
+  --expected-value "{AES2}...{/IV}..."
+
+# Print just the decrypted value
+opschain secrets resolve -P myproject \
+  --vault-path secret-vault://path/to/key \
+  --expected-value "{AES2}...{/IV}..." -q
+```
+
+`store` and `resolve` need the node whose vault configuration is used. Give it directly with `--vault-owner-id` (a node UUID), or name the node by code with `-P/--project` (optionally `-E/--environment` or `-A/--asset`) and the CLI looks up its UUID. `-E` and `-A` require a project. `resolve` is also available as `secrets global`.
+
+**`store` flags:**
+
+| Flag | Required | Description |
+|---|---|---|
+| `--vault-path` | Yes | Vault path to store the value at, e.g. `secret-vault://path/to/key` |
+| `--value` | Yes | The secret value to store |
+| `--vault-owner-id` | * | UUID of the node whose vault configuration is used |
+| `--project` / `-P` | * | Project code of the node, resolved to its UUID |
+| `--environment` / `-E` | No | Environment code of the node (requires `--project`) |
+| `--asset` / `-A` | No | Asset code of the node (requires `--project`) |
+| `--replace` | No | Replace the value if one already exists at the path |
+
+\* Provide either `--vault-owner-id` or `--project`.
+
+**`resolve` flags:**
+
+| Flag | Required | Description |
+|---|---|---|
+| `--vault-path` | Yes | Vault path to resolve |
+| `--vault-owner-id` | * | UUID of the node whose vault configuration is used |
+| `--project` / `-P` | * | Project code of the node, resolved to its UUID |
+| `--environment` / `-E` | No | Environment code of the node (requires `--project`) |
+| `--asset` / `-A` | No | Asset code of the node (requires `--project`) |
+| `--expected-value` | Yes | The encrypted value currently stored at the path. The server verifies it matches and returns the decrypted plaintext. Required by the API despite being marked optional in the OpenAPI spec. |
+
+\* Provide either `--vault-owner-id` or `--project`.
+
+Each command prints a table (SOURCE, RESULT, FILENAME) by default. Use `-o json` / `-o yaml` for the full response, or `-q` to print only the result value — the encrypted string, decrypted value, or stored path.
+
+---
+
+## 20. Troubleshooting
 
 ### `--debug` — inspect HTTP traffic
 
