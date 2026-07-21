@@ -58,6 +58,7 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [11.8 Continue a waiting change](#118-continue-a-waiting-change)
     - [11.9 Retry a change](#119-retry-a-change)
     - [11.10 Skip steps with `--skip-steps`](#1110-skip-steps-with---skip-steps)
+    - [11.11 Start partway through an action with `--starting-step`](#1111-start-partway-through-an-action-with---starting-step)
 12. [Workflows](#12-workflows)
     - [12.1 Managing workflows](#121-managing-workflows)
     - [12.2 Running workflows](#122-running-workflows)
@@ -1143,6 +1144,9 @@ opschain changes create -E dev -A myasset -a deploy --auto-continue-wait-steps
 # Skip steps matching a glob pattern (repeat the flag for multiple patterns)
 opschain changes create -E dev -A myasset -a deploy --skip-steps 'steps/to/skip/**'
 
+# Begin at a step partway through the action's step tree
+opschain changes create -E dev -A myasset -a deploy --starting-step 'deploy/child2'
+
 # Capture the change ID for later (quiet mode, no -w)
 CHANGE_ID=$(opschain changes create -E dev -A myasset -a deploy -q)
 ```
@@ -1183,6 +1187,7 @@ opschain changes create \
 | `--settings-overrides` | | No | JSON object of settings overrides |
 | `--metadata` | | No | JSON object attached to the change |
 | `--skip-steps` | | No | Glob pattern matching step `full_path`s to skip (repeatable; see §11.10) |
+| `--starting-step` | | No | Begin execution at this step's `full_path`; earlier steps are skipped (see §11.11). Not allowed with scheduling flags |
 | `--build-without-cache` | | No | Build container without Docker cache |
 | `--wait-for-completion` | `-w` | No | Poll every 5 seconds until terminal state |
 | `--show-logs` | | No | Stream logs in real-time (requires `-w`) |
@@ -1260,6 +1265,7 @@ opschain change execute -E dev --action Shutdown --assets db1,db2 -q
 | `--template-version` | `-t` | No | Template version override (asset scope) |
 | `--metadata` / `--property-overrides` / `--settings-overrides` | | No | JSON objects applied to every created change |
 | `--skip-steps` | | No | Glob pattern matching step `full_path`s to skip (repeatable; see §11.10) |
+| `--starting-step` | | No | Begin execution at this step's `full_path` on every created change; earlier steps are skipped (see §11.11) |
 | `--build-without-cache` | | No | Build container without Docker cache |
 
 - Output is a per-target summary table (`ENVIRONMENT`, `ASSET`, `RESULT`, `CHANGE ID`, `DETAIL`); `-o json`/`yaml` emit it structured; `-q` prints only the created change IDs.
@@ -1518,6 +1524,7 @@ cancel it before retrying`. Cancel it first with `changes cancel` (§11.7).
 
 - the action;
 - the step-skip patterns (`skip_steps`);
+- the starting step (`starting_step`), if the original set one;
 - whether the server auto-continues wait steps (`auto_continue_wait_steps`);
 - for project/environment-scoped changes, the git remote, git revision, and
   template version (the template version is read back from the original change).
@@ -1531,8 +1538,9 @@ The new change's metadata records `opschain.original_change_id` pointing at the
 change you retried, so you can trace where it came from.
 
 **Overriding what carries over.** Each carried-over value has a flag that
-replaces it — `--skip-steps`, `--git-remote`, `--git-rev`, `--template-version`,
-`--property-overrides`, `--settings-overrides`, and `--metadata`. A flag replaces
+replaces it — `--skip-steps`, `--starting-step`, `--git-remote`, `--git-rev`,
+`--template-version`, `--property-overrides`, `--settings-overrides`, and
+`--metadata`. A flag replaces
 the original's value rather than merging with it; `opschain.original_change_id`
 is always added regardless of `--metadata`.
 
@@ -1541,6 +1549,7 @@ is always added regardless of `--metadata`.
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--skip-steps` | original's | Glob pattern matching step `full_path`s to skip (repeatable; see §11.10) |
+| `--starting-step` | original's | Step `full_path` to begin execution at (see §11.11) |
 | `-t, --template-version` | resolved from original | Template version (project/environment scope) |
 | `-r, --git-remote` | original's | Git remote name (project/environment scope) |
 | `-v, --git-rev` | original's | Git revision (project/environment scope) |
@@ -1654,6 +1663,33 @@ that root in your patterns or anchor them with `**/`.
 retry`, `scheduled-activities create`, and `scheduled-activities update`. On the
 retry commands, omitting `--skip-steps` inherits the original run's patterns;
 passing it replaces them.
+
+### 11.11 Start partway through an action with `--starting-step`
+
+`--starting-step` runs a templated or MintModel action from a step partway down
+its tree instead of from the top. You give it one step's `full_path`; execution
+begins there. Every step before it in the tree is skipped, except that step's
+ancestors and the root step, which still run so the action can reach it.
+
+```bash
+# Run the "deploy" action, but start at its child2 step
+opschain changes create -E dev -A myasset -a deploy --starting-step 'deploy/child2'
+```
+
+The path is the same `full_path` `--skip-steps` uses (§11.10) — the slash-joined
+chain of action codes from the root down to the step. Find it the same way, with
+`changes get <id> -o json`, `changes create ... -w --show-steps`, or
+`assets actions <asset> --tree` (§9).
+
+`--skip-steps` and `--starting-step` combine: the starting step sets where the run
+begins, and any `--skip-steps` patterns still drop matching steps from what runs
+after it.
+
+`--starting-step` works on `changes create`, `changes execute`, and
+`changes retry`. On `retry`, omitting it inherits the original change's starting
+step; passing it replaces that. It is not accepted with the scheduling flags
+(`--schedule`, `--run-at`); using them together returns `--starting-step cannot be
+used with scheduling flags`.
 
 ---
 
@@ -2675,10 +2711,19 @@ opschain secrets store -P myproject \
   --vault-path secret-vault://path/to/key \
   --value "my-secret-value"
 
+# Omit --value to let the vault generate a random value (returned in the result)
+opschain secrets store -P myproject \
+  --vault-path secret-vault://path/to/key
+
 # Overwrite an existing value at the path
 opschain secrets store -P myproject \
   --vault-path secret-vault://path/to/key \
   --value "new-value" --replace
+
+# Store a file's contents as the secret value (the filename is ignored)
+opschain secrets store-file -P myproject \
+  --vault-path secret-vault://path/to/key \
+  --file ./id_rsa
 
 # Resolve (decrypt) a value from the vault — pass the encrypted value stored at the path
 opschain secrets resolve -P myproject \
@@ -2691,14 +2736,30 @@ opschain secrets resolve -P myproject \
   --expected-value "{AES2}...{/IV}..." -q
 ```
 
-`store` and `resolve` need the node whose vault configuration is used. Give it directly with `--vault-owner-id` (a node UUID), or name the node by code with `-P/--project` (optionally `-E/--environment` or `-A/--asset`) and the CLI looks up its UUID. `-E` and `-A` require a project. `resolve` is also available as `secrets global`.
+`store`, `store-file`, and `resolve` need the node whose vault configuration is used. Give it directly with `--vault-owner-id` (a node UUID), or name the node by code with `-P/--project` (optionally `-E/--environment` or `-A/--asset`) and the CLI looks up its UUID. `-E` and `-A` require a project. `resolve` is also available as `secrets global`.
+
+`store-file` is the file-based form of `store`: instead of `--value`, it uploads `--file` and stores the file's contents at the path. Binary files are base64-encoded for you, and the filename itself isn't stored.
 
 **`store` flags:**
 
 | Flag | Required | Description |
 |---|---|---|
 | `--vault-path` | Yes | Vault path to store the value at, e.g. `secret-vault://path/to/key` |
-| `--value` | Yes | The secret value to store |
+| `--value` | No | The secret value to store. Omit it and the vault generates a random value, returned in the result |
+| `--vault-owner-id` | * | UUID of the node whose vault configuration is used |
+| `--project` / `-P` | * | Project code of the node, resolved to its UUID |
+| `--environment` / `-E` | No | Environment code of the node (requires `--project`) |
+| `--asset` / `-A` | No | Asset code of the node (requires `--project`) |
+| `--replace` | No | Replace the value if one already exists at the path |
+
+\* Provide either `--vault-owner-id` or `--project`.
+
+**`store-file` flags:**
+
+| Flag | Required | Description |
+|---|---|---|
+| `--vault-path` | Yes | Vault path to store the contents at, e.g. `secret-vault://path/to/key` |
+| `--file` | Yes | Path to the local file whose contents are stored |
 | `--vault-owner-id` | * | UUID of the node whose vault configuration is used |
 | `--project` / `-P` | * | Project code of the node, resolved to its UUID |
 | `--environment` / `-E` | No | Environment code of the node (requires `--project`) |
