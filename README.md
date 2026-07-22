@@ -20,6 +20,8 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
 4. [Global Flags](#4-global-flags)
    - [Output formats](#output-formats)
    - [Quiet mode](#quiet-mode)
+   - [Referring to a resource by code, name, or ID](#referring-to-a-resource-by-code-name-or-id)
+   - [Get a resource's UUID](#get-a-resources-uuid)
 5. [Projects](#5-projects)
    - [Commands](#commands)
    - [Project properties](#project-properties)
@@ -487,7 +489,9 @@ opschain projects get myproject -o yaml
 
 ### Quiet mode
 
-`-q` / `--quiet` prints only resource IDs (one per line), making it easy to capture them in shell scripts.
+`-q` / `--quiet` prints only resource identifiers (one per line) for capturing in shell scripts.
+
+For code-based resources — projects, environments, assets, agents, workflows, templates, and authorisation policies — `-q` prints the **code**, not the server UUID. Resources with no code (git remotes, changes, events, scheduled activities, tokens) print their UUID. To get the UUID of a code-based resource, use `get --uuid` (see [Get a resource's UUID](#get-a-resources-uuid) below).
 
 ```bash
 # Capture a list of all project codes
@@ -527,6 +531,27 @@ opschain projects get --id 7f3e9c2a-...   # an ID only
 - Git remotes have no code — refer to them by name or `--id`.
 - Code and name matches are case-insensitive. If a code and some other resource's name are identical, the code wins; use `--name` to force the name.
 - When nothing matches, the error is `no <resource> matches '<value>' by code, id, or name`.
+
+### Get a resource's UUID
+
+`get` prints the full resource. Add `--uuid` to print just its server UUID (the JSON:API `id`) and nothing else — one line, ready to capture in a variable:
+
+```bash
+opschain projects get web-app --uuid
+# 7f3e9c2a-1b4d-4c5e-8a9f-0123456789ab
+
+opschain assets get myasset -P web-app -E dev --uuid
+opschain git-remotes get github -P web-app --uuid
+```
+
+`--uuid` works on `get` for every resource you look up by code, name, or ID: projects, environments, assets, agents, workflows, git remotes, templates, agent templates, and authorisation policies. It resolves the identifier the same way as a normal `get`, so you can combine it with `--code` / `--name` / `--id`. It overrides `-q` and `-o` — you always get the bare UUID.
+
+This is the difference between the two: for a code-based resource, `get -q` prints the code, `get --uuid` prints the UUID.
+
+```bash
+opschain projects get web-app -q       # web-app
+opschain projects get web-app --uuid   # 7f3e9c2a-1b4d-4c5e-8a9f-0123456789ab
+```
 
 ---
 
