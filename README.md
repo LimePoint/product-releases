@@ -83,8 +83,9 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [15.3 Scoping to a project, environment or asset](#153-scoping-to-a-project-environment-or-asset)
     - [15.4 Advanced filtering with `--filter`](#154-advanced-filtering-with---filter)
     - [15.5 Sorting](#155-sorting)
-    - [15.6 Get a specific event](#156-get-a-specific-event)
-    - [15.7 Creating a custom event](#157-creating-a-custom-event)
+    - [15.6 Timezone](#156-timezone)
+    - [15.7 Get a specific event](#157-get-a-specific-event)
+    - [15.8 Creating a custom event](#158-creating-a-custom-event)
 16. [Scripting & CI/CD Patterns](#16-scripting--cicd-patterns)
     - [Setting credentials in CI without config files](#setting-credentials-in-ci-without-config-files)
     - [Capture IDs with `-q` for shell scripting](#capture-ids-with--q-for-shell-scripting)
@@ -1172,6 +1173,11 @@ opschain changes create -E dev -A myasset -a deploy --skip-steps 'steps/to/skip/
 # Begin at a step partway through the action's step tree
 opschain changes create -E dev -A myasset -a deploy --starting-step 'deploy/child2'
 
+# MintModel difference change on a templated node (both ids required)
+opschain changes create -E dev -A myasset -a deploy \
+  --old-mintmodel-id d5533422-b3d7-47da-96ee-b0c810d0df6e \
+  --new-mintmodel-id eecff7d2-9064-43ab-bf87-298719e597e0
+
 # Capture the change ID for later (quiet mode, no -w)
 CHANGE_ID=$(opschain changes create -E dev -A myasset -a deploy -q)
 ```
@@ -1214,6 +1220,8 @@ opschain changes create \
 | `--skip-steps` | | No | Glob pattern matching step `full_path`s to skip (repeatable; see §11.10) |
 | `--starting-step` | | No | Begin execution at this step's `full_path`; earlier steps are skipped (see §11.11). Not allowed with scheduling flags |
 | `--build-without-cache` | | No | Build container without Docker cache |
+| `--old-mintmodel-id` | | No | For a MintModel difference change on a templated node, the MintModel to diff from. Must be paired with `--new-mintmodel-id`; not allowed with scheduling flags |
+| `--new-mintmodel-id` | | No | For a MintModel difference change on a templated node, the MintModel to diff to. Must be paired with `--old-mintmodel-id`; not allowed with scheduling flags |
 | `--wait-for-completion` | `-w` | No | Poll every 5 seconds until terminal state |
 | `--show-logs` | | No | Stream logs in real-time (requires `-w`) |
 | `--show-steps` | | No | Show a tree of the change's steps that updates in place as they run (requires `-w`; cannot be combined with `--show-logs`) |
@@ -1247,6 +1255,8 @@ screen, so pick one.
 
 `changes execute` (alias `exec`) runs one action against multiple assets, optionally across several environments, creating one change per asset. It acts on an asset only if that asset supports the action. Assets that don't support it, or don't exist in the environment, are skipped and listed in the summary — they don't fail the run.
 
+`-E`/`--environment` is optional. Pass one or more environment codes to fan out across the (environment × asset) matrix; omit it to target project-level assets — assets that don't sit in an environment — the same way `changes create --asset` does without `-E`. In project-level mode, `'*'` means every project-level asset, and project-level rows show `(project)` in the ENVIRONMENT column (with `-o json`/`yaml` the environment is empty).
+
 `changes` aliases to `change`, so `opschain change execute …` works too.
 
 ```bash
@@ -1255,6 +1265,10 @@ opschain change execute -E dev --action Shutdown --assets db1,db2,web1
 
 # Fan out across multiple environments (env × asset matrix)
 opschain change execute -E dev,staging --action Shutdown --assets db1,web1
+
+# Project-level assets — omit -E; name them, or use '*' for every project-level asset
+opschain change execute -P myproject --action Shutdown --assets db1,db2
+opschain change execute -P myproject --action Shutdown --assets '*'
 
 # Target EVERY asset in the environment(s) — quote the '*' so the shell doesn't expand it
 opschain change execute -E dev --action Shutdown --assets '*'
@@ -1280,8 +1294,8 @@ opschain change execute -E dev --action Shutdown --assets db1,db2 -q
 | Flag | Short | Required | Description |
 |---|---|---|---|
 | `--project` | `-P` | Yes | Project code (or `default_project` in the profile) |
-| `--environment` | `-E` | Yes | One or more environment codes, comma-separated |
-| `--assets` | | Yes | Comma-separated asset codes, or `'*'` for every asset in the environment(s) — quote it so your shell doesn't expand it. Omitting `--assets` is an error; there is no implicit "all", so you can't target a whole environment by mistake. (`'*'` rather than `all` keeps a real asset code named `all` unambiguous.) |
+| `--environment` | `-E` | No | One or more environment codes, comma-separated. Omit it to target project-level assets (assets not in an environment) |
+| `--assets` | | Yes | Comma-separated asset codes, or `'*'` for every asset in the environment(s) — or, when `-E` is omitted, every project-level asset. Quote the `'*'` so your shell doesn't expand it. Omitting `--assets` is an error; there is no implicit "all", so you can't target a whole environment by mistake. (`'*'` rather than `all` keeps a real asset code named `all` unambiguous.) |
 | `--action` | `-a` | Yes | Action to run; matched against each asset's advertised action name/path (see `assets actions`) |
 | `--dry-run` | | No | Show the matched/skipped matrix without creating any changes |
 | `--wait-for-completion` | `-w` | No | Poll every created change to a terminal state and report final statuses. On an interactive terminal the summary table refreshes in place every 5 seconds, updating each change's status live (`pending`→`running`→`success`/`error`). When output is piped, JSON/YAML, or `-q`, it polls silently and prints once at the end |
@@ -1490,6 +1504,9 @@ opschain changes continue b5bf89b6 --step afe3063d-3182-4c03-90c8-66ff933c15db
 # Continue every waiting step of a change
 opschain changes continue b5bf89b6 --all
 
+# Continue an input step, supplying the values it is waiting on
+opschain changes continue b5bf89b6 --input-arguments '{"name":"John","date":"2026-07-23"}'
+
 # Scripting: print continued step IDs only
 opschain changes continue b5bf89b6 -q
 ```
@@ -1498,6 +1515,10 @@ opschain changes continue b5bf89b6 -q
 `waiting` state, `continue` lists them and exits, asking you to re-run with
 `--step <step_id>` to pick one — or `--all` to continue them all. This prevents
 accidentally releasing every wait step at once.
+
+**Input steps:** a wait step can ask for input values before it proceeds. Pass those
+as a JSON object with `--input-arguments`; the keys and values are whatever the step
+expects. Combine it with `--step` or `--all` the same way as a plain continue.
 
 > **Note:** Continuing a step that is not in the `waiting` state returns an error
 > from the API (e.g. `Cannot continue step because it is in the "success" state`).
@@ -1807,6 +1828,11 @@ opschain workflows runs create --code deploy-app --version 2 \
 opschain workflows runs create --code deploy-app --version 2 \
   --skip-steps 'steps/to/skip/**'
 
+# Notify an email address and an LDAP group when the run errors or succeeds
+opschain workflows runs create --code deploy-app --version 2 \
+  --notify-email ops@example.com --notify-ldap-group platform \
+  --notify-event error,success
+
 # Capture the run ID
 RUN_ID=$(opschain workflows runs create --code deploy-app --version 2 -q)
 
@@ -1834,6 +1860,12 @@ opschain workflows runs cancel $RUN_ID
 ```
 
 > For `--skip-steps` pattern syntax and how to find a step's `full_path`, see §11.10.
+
+**Notifications.** The `--notify-*` flags subscribe recipients to a run's lifecycle events.
+Name recipients with any mix of `--notify-user-id` (a user's UUID), `--notify-ldap-group`, and
+`--notify-email`; each is repeatable or comma-separated. `--notify-event` picks which events
+fire a notification — one or more of `cancel`, `create`, `error`, `finish`, `start`, `success`
+(default: all). Omit every `--notify-*` flag and no notifications are configured.
 
 ---
 
@@ -2304,14 +2336,29 @@ opschain events list --sort "type asc"
 
 Default sort is `created_at desc` (newest first).
 
-### 15.6 Get a specific event
+### 15.6 Timezone
+
+The `CREATED AT` column shows timestamps in your system's local timezone by default. Pass `--utc` to `events list` or `events get` to show them in UTC instead.
+
+```bash
+# Local timezone (default)
+opschain events list
+
+# UTC
+opschain events list --utc
+opschain events get eb89e69e-5feb-4751-abe7-8a2fa53ce42e --utc
+```
+
+`--utc` only affects the table output. `--output json` and `--output yaml` always emit the raw timestamps returned by the API.
+
+### 15.7 Get a specific event
 
 ```bash
 opschain events get <event-id>
 opschain events get eb89e69e-5feb-4751-abe7-8a2fa53ce42e --output json
 ```
 
-### 15.7 Creating a custom event
+### 15.8 Creating a custom event
 
 You can emit custom events — useful for marking external milestones (pipeline stages, approvals, deployments from other tools) in the OpsChain audit trail.
 
