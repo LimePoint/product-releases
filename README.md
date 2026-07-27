@@ -909,17 +909,19 @@ nested steps, and those steps often have steps of their own. Add `--tree` to exp
 structure:
 
 ```
-├─ Binaries  [mintmodel:binaries]
-│  ├─ Install Software Binaries  [mintmodel:install_software_binaries]
-│  │  ├─ Install Binaries  [mintmodel:install_binaries_for_custwprd1oam01]
-│  │  │  └─ Install OracleJava Binaries  [mintmodel:install_oraclejava_binaries_for_custwprd1oam01]
+├─ Binaries
+│  ├─ Install Software Binaries
+│  │  ├─ Install Binaries
+│  │  │  ├─ Install OracleJava Binaries
+│  │  │  ├─ Install OracleFMWInfrastructure Binaries
+│  │  │  └─ Install OracleIdentityManagement Binaries
+│  │  └─ Install Binaries  [Install Binaries-1]
 ```
 
-Each node is labelled `<name>  [<code>]`. The name is what you read; the code in brackets is the
-identifier you pass to `changes create --action` / `changes execute --action` to run that step on
-its own. The two match for actions defined in `actions.rb`; for MintModel-generated actions the
-names repeat (several "Install Binaries" steps, for example), so the code is what tells them
-apart and what you run.
+Each node is labelled by its name — the value you pass to `changes create --action` /
+`changes execute --action` to run that step. When two sibling steps share a name (MintModel
+templates repeat names like "Install Binaries"), a bracketed code such as `[Install Binaries-1]`
+is added to tell them apart; use that code as the `--action` value for the duplicate.
 
 The tree mirrors what the API returns, so a step that also exists as a top-level action appears
 both places. `-o json` and `-o yaml` return the same tree with the full node detail; `--tree -q`
