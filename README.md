@@ -631,6 +631,8 @@ opschain projects properties versions myproject
 opschain projects properties upload-file myproject --property cert --file /path/to/cert.pem
 ```
 
+Every `update` creates a new version. By default the write is unconditional — it applies over whatever the current version is. Pass `--version <n>` with the version you read to turn it into a concurrency guard: the write applies only if the current version still matches `<n>`, and is rejected if someone else changed the properties in the meantime. Get the current version from `properties get` or `properties versions`. This applies to settings too.
+
 ### Project settings
 
 Settings work identically to properties but use a different API endpoint.
