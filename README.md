@@ -818,6 +818,44 @@ opschain templates delete --id 7f3e9c2a-...
 
 **Archive vs delete:** `archive` takes a template out of use but keeps it — restore it later with `unarchive`. `delete` removes it permanently, with no recovery. A template can't be deleted while it's assigned to a node or referenced by a change; the server rejects the request and `delete` reports the error. Identify the template by code, name, or ID (or `--code` / `--id`).
 
+### Manage template versions
+
+Each template has versions, and every version pins a git revision (branch, tag, or commit) of the template's source. The `versions` subcommands manage that history. All of them require a project and identify the template by name (the positional argument), or with `--code` / `--id`.
+
+```bash
+# Version history for a template
+opschain templates versions list "Application" -P myproject
+
+# Read one version
+opschain templates versions get "Application" v1.0 -P myproject
+
+# Pin a new version to a git revision
+opschain templates versions create "Application" v1.1 -P myproject --git-rev main
+
+# Change a version's revision or description
+opschain templates versions update "Application" v1.1 -P myproject --git-rev release
+
+# Archive/unarchive a version (hidden but recoverable)
+opschain templates versions archive "Application" v1.0 -P myproject
+opschain templates versions unarchive "Application" v1.0 -P myproject
+
+# Lock/unlock a version against changes to its pinned revision
+opschain templates versions lock "Application" v1.0 -P myproject
+opschain templates versions unlock "Application" v1.0 -P myproject
+```
+
+When you create or update a version with `--fetch-revision`, the server resolves the git revision to a commit SHA in the background — a *refresh*. To cancel a refresh that has stalled or that you started by mistake, use `cancel-refresh`:
+
+```bash
+# Cancel an in-progress git SHA refresh for version v1.0
+opschain templates versions cancel-refresh "Application" v1.0 -P myproject
+
+# By template code
+opschain templates versions cancel-refresh v1.0 --code app -P myproject
+```
+
+If the version had a previously resolved commit, that commit is restored. Otherwise the version is left in the `broken` state, and you can refresh it again later. If no refresh is in progress, the command reports `No SHA refresh is in progress for this template version`.
+
 ### View the resolved template for an asset
 
 ```bash
