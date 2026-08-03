@@ -106,7 +106,8 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [Using the skill with Claude Code](#using-the-skill-with-claude-code)
 19. [Secrets](#19-secrets)
     - [Commands](#commands-6)
-20. [Troubleshooting](#20-troubleshooting)
+20. [Admin diagnostics](#20-admin-diagnostics)
+21. [Troubleshooting](#21-troubleshooting)
     - [`--debug` — inspect HTTP traffic](#--debug--inspect-http-traffic)
     - [`--stacktrace` — Go stack trace on error](#--stacktrace--go-stack-trace-on-error)
     - [`--insecure` — self-signed certificates](#--insecure--self-signed-certificates)
@@ -1581,9 +1582,10 @@ that has already moved on — is logged and skipped rather than aborting the wai
 
 ### 11.9 Retry a change
 
-`changes retry` (alias `rerun`) re-runs a change that has finished. OpsChain has
-no server-side change retry, so this creates a **new** change against the same
-node, repeating the original's inputs. The original change is left untouched.
+`changes retry` (alias `rerun`) re-runs a change that has finished. It sends a
+retry request to the server, which re-runs the change against the same node using
+the same action and source and links the new change back to the one you retried.
+The original change is left untouched.
 
 ```bash
 # Retry a failed change
@@ -1595,11 +1597,11 @@ opschain changes retry b5bf89b6 -w --show-logs
 # Retry and wait, watching the step tree redraw in place
 opschain changes retry b5bf89b6 -w --show-steps
 
+# Retry on the latest commit for the change's revision
+opschain changes retry b5bf89b6 --refresh-sha
+
 # Retry but skip different steps this time
 opschain changes retry b5bf89b6 --skip-steps 'deploy/**'
-
-# Retry at a different git revision (project/environment scope)
-opschain changes retry b5bf89b6 --git-rev feature-branch
 
 # Scripting: print the new change ID only
 opschain changes retry b5bf89b6 -q
@@ -1610,51 +1612,37 @@ The change being retried must be in a terminal state — `success`, `error`,
 or `waiting` returns `change '<id>' is not in a terminal state (status: <status>);
 cancel it before retrying`. Cancel it first with `changes cancel` (§11.7).
 
-**What carries over.** By default the new change copies from the original:
+**What carries over.** The server re-runs the change with the original's action,
+git commit, build-cache setting, skip-steps, and overrides — it reuses the
+settings the change converged, so any setting it didn't override keeps the value
+it ran with. You don't rebuild the inputs.
 
-- the action;
-- the step-skip patterns (`skip_steps`);
-- the starting step (`starting_step`), if the original set one;
-- whether the server auto-continues wait steps (`auto_continue_wait_steps`);
-- for project/environment-scoped changes, the git remote, git revision, and
-  template version (the template version is read back from the original change).
-  Asset-scoped changes derive these from the asset's template, so they aren't
-  sent — the same as `changes create`;
-- any property and settings overrides the original change used. These aren't
-  stored on the change record, so they're re-fetched from the original's
-  override links and re-applied.
-
-The new change's metadata records `opschain.original_change_id` pointing at the
-change you retried, so you can trace where it came from.
-
-**Overriding what carries over.** Each carried-over value has a flag that
-replaces it — `--skip-steps`, `--starting-step`, `--git-remote`, `--git-rev`,
-`--template-version`, `--property-overrides`, `--settings-overrides`, and
-`--metadata`. A flag replaces
-the original's value rather than merging with it; `opschain.original_change_id`
-is always added regardless of `--metadata`.
+**Changing what carries over.** Override individual pieces with the flags below. A
+flag replaces the original's value; `--metadata` is merged over the original's
+metadata by the server.
 
 **Retry flags:**
 
 | Flag | Default | Description |
 | --- | --- | --- |
+| `--refresh-sha` | `false` | Re-resolve the git revision so the retry runs the latest commit for it. For an asset, moves the retry onto the asset's current template version |
+| `--build-without-cache` | original's | Build the image without cache |
 | `--skip-steps` | original's | Glob pattern matching step `full_path`s to skip (repeatable; see §11.10) |
-| `--starting-step` | original's | Step `full_path` to begin execution at (see §11.11) |
-| `-t, --template-version` | resolved from original | Template version (project/environment scope) |
-| `-r, --git-remote` | original's | Git remote name (project/environment scope) |
-| `-v, --git-rev` | original's | Git revision (project/environment scope) |
-| `--property-overrides` | original's | JSON property overrides object |
 | `--settings-overrides` | original's | JSON settings overrides object |
-| `--metadata` | original's | JSON metadata object |
+| `--metadata` | merged | JSON metadata object, merged over the original's |
 | `-w, --wait-for-completion` | `false` | Wait for the new change to finish (polls every 5s) |
 | `--show-logs` | `false` | Stream logs while waiting (needs `-w`) |
 | `--show-steps` | `false` | Show the live step tree while waiting (needs `-w`; not with `--show-logs`) |
-| `--auto-continue-wait-steps` | original's | Have the server release any wait step the retried change hits (carried from the original if not set) |
+| `--auto-continue-wait-steps` | `false` | Continue any wait step the retry hits, client-side while polling (needs `-w`) |
 | `--utc` | `false` | Show log timestamps in UTC (use with `--show-logs`) |
 
-The wait, log, step-tree, and auto-continue flags behave exactly as they do on
-`changes create` (§11.2). With `-w`, the command exits non-zero if the new change
-finishes in any state other than `success`.
+The wait, log, and step-tree flags behave as they do on `changes create` (§11.2).
+`--auto-continue-wait-steps` works differently here: the retry request has no
+server-side auto-continue field, so the CLI releases wait steps itself while it
+polls. It therefore needs `-w`, and passing it without `-w` returns
+`--auto-continue-wait-steps requires --wait-for-completion on retry`. With `-w`,
+the command exits non-zero if the new change finishes in any state other than
+`success`.
 
 ### 11.10 Skip steps with `--skip-steps`
 
@@ -1775,11 +1763,10 @@ chain of action codes from the root down to the step. Find it the same way, with
 begins, and any `--skip-steps` patterns still drop matching steps from what runs
 after it.
 
-`--starting-step` works on `changes create`, `changes execute`, and
-`changes retry`. On `retry`, omitting it inherits the original change's starting
-step; passing it replaces that. It is not accepted with the scheduling flags
-(`--schedule`, `--run-at`); using them together returns `--starting-step cannot be
-used with scheduling flags`.
+`--starting-step` works on `changes create` and `changes execute`. It is not
+accepted with the scheduling flags (`--schedule`, `--run-at`); using them together
+returns `--starting-step cannot be used with scheduling flags`. `changes retry`
+doesn't take `--starting-step` — the server reuses the original change's steps.
 
 ---
 
@@ -2143,6 +2130,7 @@ opschain scheduled-activities update <id> --enabled=false    # disable
 opschain scheduled-activities update <id> --git-rev develop
 opschain scheduled-activities update <id> --skip-steps 'steps/to/skip/**'
 opschain scheduled-activities update <id> --auto-continue-wait-steps
+opschain scheduled-activities update <id> --settings-overrides '{"dockerfile": "Dockerfile_custom"}'
 
 # Delete a scheduled activity
 opschain scheduled-activities delete <id>
@@ -2151,6 +2139,10 @@ opschain scheduled-activities delete <id>
 > For `--skip-steps` pattern syntax and how to find a step's `full_path`, see §11.10.
 > On `update`, passing `--skip-steps` replaces the stored patterns with the ones you
 > give; omit it to leave them unchanged.
+
+> `update` also takes `--property-overrides`, `--settings-overrides`, and
+> `--metadata` (each a JSON object), the same as `create`. Passing one replaces the
+> stored value; omit it to leave it unchanged.
 
 ### 13.6 Scheduling examples
 
@@ -2986,7 +2978,36 @@ Each command prints a table (SOURCE, RESULT, FILENAME) by default. Use `-o json`
 
 ---
 
-## 20. Troubleshooting
+## 20. Admin diagnostics
+
+`opschain admin` reads cluster-level state that spans every node. These commands
+require an administrator account.
+
+```bash
+# What is the server working on right now?
+opschain admin background-tasks
+opschain admin background-tasks -o json    # full detail (image SHA, render logs, links)
+opschain admin background-tasks -q         # task IDs only
+
+# How busy are the worker pools?
+opschain admin resource-slots
+opschain admin resource-slots -o json      # per-slot detail
+```
+
+`admin background-tasks` (alias `tasks`) lists every node background task that
+hasn't finished yet, across all nodes — generate-actions requests, MintModel
+concretise tasks, agent image builds, and agent start/stop tasks. The table shows
+ID, REQUEST #, STATUS, TASK TYPE, CREATED BY, and CREATED AT.
+
+`admin resource-slots` (alias `slots`) shows the resource slot pools. Each pool —
+`actions_refresh`, `runner`, `mintmodel_concretise`, `image_build` — has a fixed
+number of slots that cap how much work of that kind runs at once. The table shows
+POOL, LIMIT, CLAIMED, and FREE. Use `-o json` for per-slot detail: which node holds
+each slot, since when, and whether the claim is stale.
+
+---
+
+## 21. Troubleshooting
 
 ### `--debug` — inspect HTTP traffic
 
