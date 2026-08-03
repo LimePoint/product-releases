@@ -64,6 +64,7 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
 12. [Workflows](#12-workflows)
     - [12.1 Managing workflows](#121-managing-workflows)
     - [12.2 Running workflows](#122-running-workflows)
+    - [12.3 Approvals and paused steps](#123-approvals-and-paused-steps)
 13. [Scheduling](#13-scheduling)
     - [13.1 Two approaches](#131-two-approaches)
     - [13.2 Cron expressions and one-shot `--run-at`](#132-cron-expressions-and-one-shot---run-at)
@@ -1504,7 +1505,8 @@ opschain changes attach "$CHANGE_ID"
 Like `create --wait-for-completion`, `attach` exits non-zero when the change ends
 in a non-success terminal state (`error`, `cancelled`, `failed`), so it is safe
 to use in CI. If the change has already finished when you attach, its final state
-is printed and the command exits immediately.
+is printed and the command exits immediately; add `--show-steps` to also print the
+completed step tree — a quick way to inspect a finished change's steps.
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -1878,12 +1880,23 @@ opschain workflows runs create --code deploy-app --version 2 \
 # Capture the run ID
 RUN_ID=$(opschain workflows runs create --code deploy-app --version 2 -q)
 
-# List runs for a workflow
+# List runs for one workflow
 opschain workflows runs list --code deploy-app
 opschain workflows runs list --code deploy-app --limit 20
 
+# List runs across every workflow and project (omit --code)
+opschain workflows runs list --limit 50
+
+# All runs that errored, newest first
+opschain workflows runs list --filter status_code_eq=error
+
 # Get status of a specific run
 opschain workflows runs get $RUN_ID
+
+# Reattach to a detached run and follow it to completion (streams logs by default)
+opschain workflows runs attach $RUN_ID
+opschain workflows runs attach $RUN_ID --show-steps      # live step tree instead of logs
+opschain workflows runs attach $RUN_ID --show-logs=false # status transitions only
 
 # View logs for a run
 opschain workflows runs logs $RUN_ID
@@ -1903,11 +1916,85 @@ opschain workflows runs cancel $RUN_ID
 
 > For `--skip-steps` pattern syntax and how to find a step's `full_path`, see §11.10.
 
+**Listing runs.** `workflows runs list --code <code>` (with a project) lists one workflow's runs.
+Omit `--code` and it lists runs across every workflow and project. In both modes `--limit` caps
+the count, `--sort` sets the order (default `updated_at desc`), and `--filter` applies ransack
+predicates (`field_predicate=value`, repeatable) — e.g. `--filter status_code_eq=error`.
+
+**Attaching to a run.** `workflows runs create -w` waits and streams from the start, but a run
+created detached (e.g. with `-q`) has no terminal following it. `workflows runs attach <run_id>`
+(aliases `watch`, `reattach`) reattaches: it polls every 5 seconds and, by default, streams log
+lines until the run reaches a terminal status. Pass `--show-logs=false` for status transitions
+only, or `--show-steps` to watch the step tree redraw in place instead (the two can't be
+combined). `--auto-continue-wait-steps` releases any plain wait step the run hits while you are
+attached; approval steps are left for you to `approve`/`reject` (see §12.3). If the run has
+already finished, attach prints its final state and exits — non-zero when the run ended in any
+non-success state, so it is safe in scripts; add `--show-steps` to also print the completed step
+tree. Ctrl-C detaches without affecting the run.
+
 **Notifications.** The `--notify-*` flags subscribe recipients to a run's lifecycle events.
 Name recipients with any mix of `--notify-user-id` (a user's UUID), `--notify-ldap-group`, and
 `--notify-email`; each is repeatable or comma-separated. `--notify-event` picks which events
 fire a notification — one or more of `cancel`, `create`, `error`, `finish`, `start`, `success`
 (default: all). Omit every `--notify-*` flag and no notifications are configured.
+
+### 12.3 Approvals and paused steps
+
+A run can pause on a step and wait for a person: a **wait step** holds until someone continues
+it, and an **approval step** holds until someone approves or rejects it. Advance those steps
+with `workflows runs steps`.
+
+Address the list by the run's UUID; address a single step by the step's own UUID (which `list`
+prints).
+
+```bash
+# List the steps of a run, with their status and who must approve each
+opschain workflows runs steps list $RUN_ID
+
+# Render the step hierarchy as a tree (shows each step's target asset and action)
+opschain workflows runs steps list $RUN_ID --tree
+
+# List steps across every run — e.g. everything still waiting for approval
+opschain workflows runs steps list --filter status_code_eq=waiting
+
+# Just the step IDs
+opschain workflows runs steps list $RUN_ID -q
+
+# Inspect one step and read its logs
+opschain workflows runs steps get $STEP_ID
+opschain workflows runs steps logs $STEP_ID --utc
+
+# Approve an approval step (releases it so the run continues)
+opschain workflows runs steps approve $STEP_ID --message "reviewed and approved"
+
+# Reject an approval step (fails it so the run stops there)
+opschain workflows runs steps reject $STEP_ID --message "wrong target environment"
+
+# Continue a wait step
+opschain workflows runs steps continue $STEP_ID
+```
+
+`--message` is optional on `approve`, `reject`, and `continue`; the note is recorded against the
+step. On success each prints the step's new status, or just the step ID with `-q`. The `TYPE`
+column in `list` shows the step kind — `wait`, `change`, `noop`, or `workflow` (a child
+workflow).
+
+To find a paused step, run `workflows runs steps list $RUN_ID` and look for `waiting` in the
+`STATUS` column; the `REQUIRES APPROVAL` column names the users or groups whose approval an
+approval step needs.
+
+In `--tree` output, a step that runs an action against a node shows its target and action, e.g.
+`Stop all assets in parallel [change/running] → d1/obpcid (Shutdown)`. This matters for a
+multi-target change, where every fanned-out step shares the same name — the target is what tells
+them apart. The target is shown as `environment/asset` (or just the asset for a project-level
+one), so the same asset run across several environments stays distinguishable (`d1/obpcid` vs
+`d2/obpcid`). If a workflow spans more than one project (a step that runs a child workflow in
+another project), the project is added too — `projA/d1/obpcid` — so cross-project targets don't
+collide either; single-project runs leave it off to stay uncluttered. Targets come from the run's
+step tree, so they appear when you scope to a single run; a cross-run `list` (no run id) shows the
+action alone. Drop the run ID to list steps across every run — pair it with `--filter` to
+sweep for work, e.g. `--filter status_code_eq=waiting` for everything currently awaiting a person.
+`--filter` takes ransack predicates (`field_predicate=value`) and repeats.
 
 ---
 
