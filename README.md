@@ -48,7 +48,7 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [10.5 Viewing agent logs](#105-viewing-agent-logs)
     - [10.6 Kubernetes events](#106-kubernetes-events)
     - [10.7 Properties and settings](#107-properties-and-settings)
-    - [10.8 Converged properties](#108-converged-properties)
+    - [10.8 Converged properties and settings](#108-converged-properties-and-settings)
 11. [Changes (Executing Actions)](#11-changes-executing-actions)
     - [11.1 What a change is](#111-what-a-change-is)
     - [11.2 Creating changes](#112-creating-changes)
@@ -106,8 +106,16 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [Using the skill with Claude Code](#using-the-skill-with-claude-code)
 19. [Secrets](#19-secrets)
     - [Commands](#commands-6)
-20. [Admin diagnostics](#20-admin-diagnostics)
-21. [Troubleshooting](#21-troubleshooting)
+20. [Administering the cluster](#20-administering-the-cluster)
+    - [20.1 What the server is doing](#201-what-the-server-is-doing)
+    - [20.2 Deployments](#202-deployments)
+    - [20.3 Pods and their logs](#203-pods-and-their-logs)
+21. [Sending email from a change](#21-sending-email-from-a-change)
+22. [Converged properties and settings](#22-converged-properties-and-settings)
+    - [See the merged values](#see-the-merged-values)
+    - [Find out where a value came from](#find-out-where-a-value-came-from)
+    - [Look back in time](#look-back-in-time)
+23. [Troubleshooting](#23-troubleshooting)
     - [`--debug` — inspect HTTP traffic](#--debug--inspect-http-traffic)
     - [`--stacktrace` — Go stack trace on error](#--stacktrace--go-stack-trace-on-error)
     - [`--insecure` — self-signed certificates](#--insecure--self-signed-certificates)
@@ -645,6 +653,10 @@ opschain projects settings update myproject --data '{"log_level": "info"}'
 opschain projects settings versions myproject
 ```
 
+These show what is set *on* the project. For the merged result — repository properties plus the
+project's own — use `opschain projects converged-properties myproject` or
+`converged-settings`; see [§22](#22-converged-properties-and-settings).
+
 ---
 
 ## 6. Git Remotes
@@ -781,6 +793,10 @@ opschain environments properties versions dev
 opschain environments settings get staging
 opschain environments settings update staging --from-file settings.json
 ```
+
+These show what is set *on* the environment. For the merged result — repository and project values
+included — use `opschain environments converged-properties dev -P myproject` or
+`converged-settings`; see [§22](#22-converged-properties-and-settings).
 
 ---
 
@@ -978,6 +994,11 @@ opschain assets properties update myasset \
 opschain assets settings get myasset -E dev
 ```
 
+These show what is set *on* the asset. For the values an action will actually run with — the
+template, project, environment and asset layers merged — use
+`opschain assets converged-properties myasset -P myproject -E dev` or `converged-settings`; see
+[§22](#22-converged-properties-and-settings).
+
 ### Generate Actions
 
 When OpsChain needs to discover what actions a template exposes, it builds the container image and queries it. This is managed via generate-actions requests.
@@ -1156,19 +1177,28 @@ opschain agents properties update myagent -P myproject \
 opschain agents settings get myagent -P myproject
 ```
 
-### 10.8 Converged properties
+### 10.8 Converged properties and settings
 
-Shows the fully merged properties that will apply to the agent — combining template (repository) properties, project properties, and agent-specific properties.
+Shows the fully merged properties or settings that will apply to the agent — combining template (repository) properties, project properties, and agent-specific properties.
 
 ```bash
 # Current merged properties
 opschain agents converged-properties myagent -P myproject --output json
+
+# Merged settings
+opschain agents converged-settings myagent -P myproject --output json
+
+# Where did each value come from?
+opschain agents converged-properties myagent -P myproject --show-sources
 
 # Properties as they would have been at a specific point in time
 opschain agents converged-properties myagent -P myproject \
   --converge-date 2026-04-01T00:00:00+00:00 \
   --output yaml
 ```
+
+The same pair of commands exists for projects, environments, and assets — see
+[§22 Converged properties and settings](#22-converged-properties-and-settings).
 
 ---
 
@@ -2978,10 +3008,13 @@ Each command prints a table (SOURCE, RESULT, FILENAME) by default. Use `-o json`
 
 ---
 
-## 20. Admin diagnostics
+## 20. Administering the cluster
 
-`opschain admin` reads cluster-level state that spans every node. These commands
-require an administrator account.
+`opschain admin` works with state that spans every node — what the server is busy
+with, how loaded its worker pools are, and the Kubernetes deployments and pods it
+runs on. These commands require an administrator account.
+
+### 20.1 What the server is doing
 
 ```bash
 # What is the server working on right now?
@@ -3005,9 +3038,264 @@ number of slots that cap how much work of that kind runs at once. The table show
 POOL, LIMIT, CLAIMED, and FREE. Use `-o json` for per-slot detail: which node holds
 each slot, since when, and whether the claim is stale.
 
+### 20.2 Deployments
+
+```bash
+# What is deployed, and at how many replicas?
+opschain admin deployments list
+opschain admin deployments list -o json    # rollout conditions, images, labels, selector
+opschain admin deployments list -q         # deployment names only
+
+# Replace a deployment's pods without changing its configuration
+opschain admin deployments restart opschain-api-worker
+
+# Run more workers
+opschain admin deployments scale opschain-api-worker --replicas 5
+
+# Stop a deployment processing work
+opschain admin deployments scale opschain-mintmodel-steps-api --replicas 0
+```
+
+`admin deployments` (aliases `deployment`, `deploys`) is the command group; `list`
+shows NAME, REPLICAS, READY, AVAILABLE, MAX, and RESTARTED AT. REPLICAS is the count the deployment is configured to run;
+READY and AVAILABLE are how many pods have reached those states, and show `-` when
+Kubernetes reports none. MAX is the replica ceiling — a deployment showing MAX 1
+cannot be scaled.
+
+`restart` performs a rolling restart, replacing each pod without changing the
+deployment's configuration. `scale` sets the replica count, which must be between 0
+and that deployment's MAX. Only the worker deployments can be scaled; scaling any
+other one is rejected with `Deployment '<name>' cannot be scaled`, naming the ones
+that can.
+
+Kubernetes applies both asynchronously. The command returns once the change is
+accepted, not when the rollout finishes — run `admin deployments list` to watch it.
+Two consequences worth planning around:
+
+- Restarting the OpsChain API deployment kills the pod serving your request.
+- Scaling down doesn't stop the surplus workers straight away. They keep running
+  until they finish their in-progress jobs, for up to the deployment's termination
+  grace period — 1 hour by default.
+
+A replica count set here isn't written back to the Helm values, so the next Helm
+upgrade returns the deployment to its configured count.
+
+`restart` and `scale` need the `updatable` permission on the
+`/admin/deployments/restart` and `/admin/deployments/scale` authorisation paths. A
+rule on a parent path such as `/admin` grants it; a rule on the specific path
+overrides that parent rule.
+
+### 20.3 Pods and their logs
+
+```bash
+# What pods are running?
+opschain admin pods list
+opschain admin pods list -o json           # image, node and pod IPs, labels, UID
+opschain admin pods list -q                # pod names only
+
+# Read a pod's log (last 1000 lines)
+opschain admin pods logs opschain-api-worker-55db895694-vn4hr
+
+# A specific container of a multi-container pod
+opschain admin pods logs mintpress-ingress-6bbc64c54b-stph4 --container proxy
+
+# More lines, then page forward from the last one
+opschain admin pods logs opschain-api-7c688bdd47-zzvm7 --limit 5000
+opschain admin pods logs opschain-api-7c688bdd47-zzvm7 --since '2026-08-07T20:10:32.191676Z-0'
+
+# Write the whole log to a file
+opschain admin pods logs change-3ecf1a2b --out-file runner.log
+```
+
+`admin pods list` covers every pod in the namespace — the runner pods executing
+changes, the MintModel pods, and the API and worker pods. The table shows NAME,
+STATE, RESTARTS, NODE, STARTED, and CONTAINERS. The CONTAINERS column is what you
+pass to `logs --container`.
+
+`admin pods logs` prints the log oldest line first. Pass `--container` for a pod
+with more than one; without it you get the pod's first container. Naming one that
+doesn't exist returns `'<name>' is not a container of pod '<pod>'` and lists the
+valid ones.
+
+When the log has more lines than `--limit`, the CLI prints a note to stderr with the
+cursor to continue from:
+
+```
+Note: the pod log has more lines than the limit. Continue with --since '2026-08-07T20:10:32.191676Z-0', raise --limit, or use --out-file.
+```
+
+Pass that value to `--since` to get the lines after it. Use a log line id — the
+`id` field in `-o json` output, or what `-q` prints — rather than a bare timestamp,
+which drops every line sharing that timestamp.
+
+**`logs` flags:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--container` | The pod's first container | Container to read the log of |
+| `--limit` / `-l` | 1000 | Maximum number of log lines to return |
+| `--since` | — | Only return lines after this log line id |
+| `--out-file` | — | Write the entire pod log to this file as plain text. Ignores `--limit` and `--since` |
+| `--utc` | Local timezone | Display timestamps in UTC |
+
+Reading pod logs needs the `readable` permission on the `/admin/pods/logs`
+authorisation path.
+
+Two limits apply to what Kubernetes will give you. Pod logs only exist while the pod
+does, so use `opschain changes logs` to review a change that has already finished.
+And at most 100MB of a pod's log is read per request — output beyond that isn't
+returned.
+
 ---
 
-## 21. Troubleshooting
+## 21. Sending email from a change
+
+`opschain email send` sends mail through the global default email channel's SMTP
+configuration.
+
+This only works from inside a running change or agent. It authenticates with the API
+key OpsChain issues to the runner in its step context, and rejects every other token
+with a `Record not found` error — your own login token included. Set the runner's key
+as `OPSCHAIN_TOKEN` (`MINTPRESS_TOKEN` for MintPress), or pass it with `--token`.
+
+```bash
+# Plain text to one recipient
+opschain email send --to ops@example.com \
+  --subject 'Deploy finished' --body 'All steps succeeded.'
+
+# Several recipients, a copy, and a body read from a file
+opschain email send --to ops@example.com,sre@example.com --cc team@example.com \
+  --subject 'Nightly report' --body-file report.txt
+
+# HTML, sent from a specific address, with an attachment
+opschain email send --to ops@example.com --subject 'Weekly summary' \
+  --body '<h1>Summary</h1><p>See attached.</p>' --content-type text/html \
+  --from changes@example.com --attach report.csv
+
+# Print just the message id, for scripting
+opschain email send --to ops@example.com --subject 'Done' --body 'Finished.' -q
+```
+
+**`send` flags:**
+
+| Flag | Required | Default | Description |
+|---|---|---|---|
+| `--subject` | Yes | — | Email subject |
+| `--body` | * | — | Email body |
+| `--body-file` | * | — | Read the body from a file instead of `--body` |
+| `--to` | † | — | Recipient addresses, comma-separated and repeatable |
+| `--cc` | † | — | Cc addresses, comma-separated and repeatable |
+| `--bcc` | † | — | Bcc addresses, comma-separated and repeatable |
+| `--from` | No | The OpsChain no-reply address | Sender address |
+| `--content-type` | No | `text/plain` | `text/plain` or `text/html` |
+| `--attach` | No | — | File to attach; repeatable |
+
+\* Provide either `--body` or `--body-file`.
+† Provide at least one of `--to`, `--cc`, or `--bcc`.
+
+`--attach` reads the file, base64-encodes it, and guesses its content type from the
+extension. The attachments may total 5MB decoded; the CLI rejects a larger set before
+making the request.
+
+`--from` isn't restricted — a running change or agent may send as any address its
+SMTP server accepts. Whichever address is used is recorded in the `api:email:create`
+event raised for the request, so you can audit it with `opschain events list --type
+api:email:create`.
+
+The command prints a confirmation line by default, the message id under `-q`, and the
+full record — recipients, attachment filenames, sent time — under `-o json` / `-o
+yaml`. If no global email channel is configured on the server, the send is rejected
+with `Unable to send email as no default global email channel was found`.
+
+---
+
+## 22. Converged properties and settings
+
+A node's properties come from several places at once — a git repository, the project, the
+environment, and the node itself. The converged view shows the result of that merge: the values an
+action running at the node will actually see.
+
+Every node level has the same pair of commands:
+
+```bash
+opschain projects converged-properties myproject
+opschain environments converged-properties dev -P myproject
+opschain assets converged-properties myasset -P myproject -E dev
+opschain agents converged-properties myagent -P myproject
+
+opschain projects converged-settings myproject
+opschain environments converged-settings dev -P myproject
+opschain assets converged-settings myasset -P myproject -E dev
+opschain agents converged-settings myagent -P myproject
+```
+
+`converged-props` is an alias for `converged-properties`. Identify the node by code, name, or ID,
+the same as any other command. Each level merges everything above it, so an asset's converged view
+includes the project's and environment's values.
+
+### See the merged values
+
+The default table only counts the top-level keys. Use `-o json` or `-o yaml` for the data itself:
+
+```bash
+opschain assets converged-properties myasset -P myproject -E dev -o json
+```
+
+### Find out where a value came from
+
+`--show-sources` replaces the merged data with one row per value, naming the layer that supplied it:
+
+```bash
+$ opschain assets converged-properties myasset -P myproject -E dev --show-sources
+KEY                          SOURCE
+common.cert_suffix           Repository: mintpress/properties/projects/wpgcm_cloud/environments/d1/properties.json
+common.trustStore            Repository: mintpress/properties/projects/wpgcm_cloud/environments/d1/properties.json
+opschain.env.SSH_KEY_PATH    Project: wpgcm_cloud (wpgcm_cloud)
+```
+
+Keys are dotted paths into the property tree, sorted alphabetically. This is the fastest way to
+answer "why is this value what it is" — whether a value came from a repository file or was set on
+the project, and which file or level it was.
+
+A property name containing a dot is not escaped, so `opschain.files./opt/opschain/.cinc/knife.rb.content`
+reads as one path even though `knife.rb` is a single key. Use `-o json` if you need the structure
+unambiguously.
+
+`--show-sources -q` prints the keys alone, one per line, for scripting. With `-o json` or
+`-o yaml`, `--show-sources` has no effect: those formats already include the full source data under
+`meta`.
+
+If the server returns no source information, the command prints `Note: the server reported no
+source information for <node>` to stderr and exits 0.
+
+### Look back in time
+
+`--converge-date` derives the result as it would have been at that point, resolving the template
+version and property versions active then:
+
+```bash
+opschain assets converged-properties myasset -P myproject -E dev \
+  --converge-date 2026-04-01T00:00:00+00:00 -o yaml
+```
+
+The date is ISO 8601. An unparseable value returns `API error (400): Bad request`.
+
+**Flags** (all eight commands):
+
+| Flag | Default | Description |
+|---|---|---|
+| `--converge-date` | Current state | Derive the result as of this date/time (ISO 8601) |
+| `--show-sources` | — | Show where each value came from instead of the merged data |
+| `--project` / `-P` | — | Project code. Not applicable to `projects` |
+| `--environment` / `-E` | — | Environment code, for an environment-scoped asset or agent. Not applicable to `projects` or `environments` |
+| `--code` / `--name` / `--id` | — | Force the lookup to a code, name, or UUID |
+
+To see the properties set *at* one level rather than the merged result, use that resource's
+`properties get` / `settings get` instead.
+
+---
+
+## 23. Troubleshooting
 
 ### `--debug` — inspect HTTP traffic
 
