@@ -110,6 +110,7 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [20.1 What the server is doing](#201-what-the-server-is-doing)
     - [20.2 Deployments](#202-deployments)
     - [20.3 Pods and their logs](#203-pods-and-their-logs)
+    - [20.4 Deleting a stuck pod](#204-deleting-a-stuck-pod)
 21. [Sending email from a change](#21-sending-email-from-a-change)
 22. [Converged properties and settings](#22-converged-properties-and-settings)
     - [See the merged values](#see-the-merged-values)
@@ -634,14 +635,17 @@ opschain projects properties update myproject --data '{"db_host": "prod-db.inter
 # Update from a JSON/YAML file
 opschain projects properties update myproject --from-file properties.json
 
-# List all versions
+# List all versions (newest first)
 opschain projects properties versions myproject
+opschain projects properties versions myproject --limit 20
 
 # Upload a binary file as a property attachment
 opschain projects properties upload-file myproject --property cert --file /path/to/cert.pem
 ```
 
 Every `update` creates a new version. By default the write is unconditional — it applies over whatever the current version is. Pass `--version <n>` with the version you read to turn it into a concurrency guard: the write applies only if the current version still matches `<n>`, and is rejected if someone else changed the properties in the meantime. Get the current version from `properties get` or `properties versions`. This applies to settings too.
+
+`versions` lists newest first. `--limit` caps how many you get back; without it the server returns up to 1000. It's available on the properties and settings `versions` commands for projects, environments, agents, and assets alike.
 
 ### Project settings
 
@@ -853,6 +857,10 @@ opschain templates versions create "Application" v1.1 -P myproject --git-rev mai
 # Change a version's revision or description
 opschain templates versions update "Application" v1.1 -P myproject --git-rev release
 
+# Track a branch: refresh the version whenever it gets a new commit
+opschain templates versions create latest main -P myproject --code app --git-rev main --float-git-rev
+opschain templates versions update latest -P myproject --code app --git-rev main --float-git-rev=false
+
 # Archive/unarchive a version (hidden but recoverable)
 opschain templates versions archive "Application" v1.0 -P myproject
 opschain templates versions unarchive "Application" v1.0 -P myproject
@@ -860,6 +868,36 @@ opschain templates versions unarchive "Application" v1.0 -P myproject
 # Lock/unlock a version against changes to its pinned revision
 opschain templates versions lock "Application" v1.0 -P myproject
 opschain templates versions unlock "Application" v1.0 -P myproject
+```
+
+#### Follow a branch instead of pinning a commit
+
+By default a version stays on the commit its revision resolved to, and you move it
+yourself. `--float-git-rev` makes the version track its revision instead: whenever
+the revision resolves to a new commit, the version and its assets' actions refresh.
+Point a version at `main` with `--float-git-rev` and every merge to `main` reaches the
+assets using it, without another CLI call.
+
+`--float-git-rev` works on both `create` and `update`. Turn tracking off again with
+`--float-git-rev=false`, which leaves the version on the commit it is currently on.
+Omit the flag and whatever the version already has is kept.
+
+The FLOAT column in `versions list` shows which versions track their revision:
+
+```
+VERSION  STATE  GIT REV  CREATED BY  ARCHIVED  LOCKED  FLOAT
+latest   ready  main     jo          no        no      yes
+v1.0     ready  v1.0     jo          no        yes     no
+```
+
+Locking and floating are mutually exclusive — the server rejects a request that would
+set both. To lock a version that floats, run
+`versions update <version> --float-git-rev=false` first, then `versions lock`.
+
+If a float refresh fails, the reason is in `float_refresh_error`:
+
+```bash
+opschain templates versions get "Application" latest -P myproject -o json | grep float_refresh_error
 ```
 
 When you create or update a version with `--fetch-revision`, the server resolves the git revision to a commit SHA in the background — a *refresh*. To cancel a refresh that has stalled or that you started by mistake, use `cancel-refresh`:
@@ -960,6 +998,11 @@ opschain assets delete myasset
 opschain assets delete myasset --ignore-in-use
 ```
 
+`assets get <code> -o json` includes `mintmodel_valid` and, when it is `false`,
+`mintmodel_invalid_reason` — the server's explanation of why the asset's MintModel
+won't concretise. Check it when an action list looks wrong or a change won't start.
+Both come from the single-asset response; `assets list` doesn't return them.
+
 ### Viewing an action's steps
 
 `opschain assets actions myasset` lists the top-level actions. An action is usually built from
@@ -1019,10 +1062,13 @@ opschain assets generate-actions get myasset <request-id>
 # category and logged_at (plus template_version_history_id, node_background_task_id).
 opschain assets generate-actions logs <request-id>
 opschain assets generate-actions logs <request-id> -o json
+opschain assets generate-actions logs <request-id> --limit 100
 
 # Cancel a running generation request
 opschain assets generate-actions cancel myasset <request-id>
 ```
+
+Without `--limit`, `logs` returns up to 10000 lines.
 
 ### MintModels
 
@@ -1032,6 +1078,7 @@ MintModels are snapshots of an asset's computed model data at a point in time.
 # List all MintModels for an asset (newest first)
 opschain assets mintmodels list myasset
 opschain assets mintmodels list myasset -E dev
+opschain assets mintmodels list myasset --limit 5    # five most recent
 
 # Get the latest MintModel (no ID required)
 opschain assets mintmodels get myasset
@@ -1051,6 +1098,8 @@ opschain assets mintmodels generate myasset -E dev
 # Generate and wait for the result, then print the new MintModel
 opschain assets mintmodels generate myasset --wait
 ```
+
+`list` returns newest first, up to the server's limit of 100. `--limit` caps it lower — `--limit 5` for the five most recent.
 
 The `--out-file` flag writes the MintModel's JSON payload to a file, pretty-printed, with key ordering preserved as returned by the API. The confirmation message is written to stderr and can be suppressed with `-q`.
 
@@ -1415,9 +1464,29 @@ opschain changes list --project myproject --status running
 # Increase the result limit
 opschain changes list --project myproject --limit 50
 
+# Count every match instead of stopping at 1000
+opschain changes list --project myproject --status error --exact-count
+
 # Sort by status ascending
 opschain changes list --sort "status_code asc"
 ```
+
+#### How many changes matched
+
+When more changes match than `--limit` returns, `changes list` prints the total to
+stderr under the table:
+
+```
+Note: 243 changes match - showing the most recent 15. Raise --limit to see more.
+```
+
+The server stops counting at 1000, so beyond that the note reads `more than 1000
+changes match`. Add `--exact-count` for the true figure. Counting every match is
+slower on a server with a long change history, so it's off by default.
+
+The note goes to stderr, so it doesn't pollute a piped table, and it's suppressed
+under `-q`. With `--include-workflow-runs` the count covers both, and the note says
+so.
 
 #### Advanced filtering with Ransack predicates
 
@@ -1811,6 +1880,7 @@ Workflows are reusable, versioned automation scripts written in YAML that orches
 ```bash
 # List workflows in a project
 opschain workflows list
+opschain workflows list --limit 10          # first 10 only
 
 # Get a workflow by code, name, or ID (see §4 "Referring to a resource")
 opschain workflows get deploy-app
@@ -1862,6 +1932,9 @@ opschain workflows versions update deploy-app 2 --source-yaml-file deploy-app.ya
 `--resolve-properties` expands multi-target steps and replaces properties in the stored
 version; `--property-overrides` (a JSON object) supplies the property values used during that
 resolution. Both are available on `workflows versions create` and `workflows versions update`.
+
+`workflows list` returns up to the server's limit of 100 workflows. Pass `--limit` to cap it
+lower.
 
 ### 12.2 Running workflows
 
@@ -3145,6 +3218,47 @@ Two limits apply to what Kubernetes will give you. Pod logs only exist while the
 does, so use `opschain changes logs` to review a change that has already finished.
 And at most 100MB of a pod's log is read per request — output beyond that isn't
 returned.
+
+### 20.4 Deleting a stuck pod
+
+```bash
+# Force delete a pod (prompts to confirm)
+opschain admin pods delete change-3ecf1a2b-4d5e-4f60-8a71-92b3c4d5e6f7
+
+# Skip the prompt, for scripts
+opschain admin pods delete change-3ecf1a2b --force
+
+# The accepted pod as JSON, or just its name
+opschain admin pods delete change-3ecf1a2b --force -o json
+opschain admin pods delete change-3ecf1a2b --force -q
+```
+
+`admin pods delete` force deletes a pod without waiting out its termination grace
+period. It prompts before doing anything:
+
+```
+This will force delete pod 'change-3ecf1a2b', failing any step or task it is running. Continue? [y/N]
+```
+
+Pass `--force` to skip the prompt in a script. Kubernetes removes the pod
+asynchronously, so the command reports the pod as it was accepted for deletion.
+
+Only the pods OpsChain creates to do its own processing can be deleted — change
+workers, step runners, agents, generate actions, and MintModel generation. Those are
+the pods with a null `controlled_by` in `admin pods list -o json`, and they carry a
+`links.delete` entry. Anything else in the namespace, including the OpsChain
+deployment and stateful set pods, is refused:
+
+```
+Error: API error (422): Pod 'opschain-api-worker-1' cannot be deleted - only the pods OpsChain creates to run changes, steps, agents and MintModel or action generation can be deleted
+```
+
+Deleting a pod OpsChain is still waiting on **fails** the step or task that pod was
+running. Use this to recover from a pod that is stuck, not to stop work in progress —
+cancel the change (`opschain changes cancel`) or the workflow run
+(`opschain workflows runs cancel`) instead.
+
+Deleting a pod requires a superuser account. No authorisation rule grants it.
 
 ---
 
