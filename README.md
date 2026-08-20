@@ -667,6 +667,8 @@ project's own — use `opschain projects converged-properties myproject` or
 
 Git remotes define where OpsChain fetches your code from. They are scoped to a project.
 
+OpsChain fetches each remote periodically to keep its cache warm. Set `--periodic-fetch-interval` to control how often for a single remote; without it, the remote inherits the project/global `git_remote.periodic_fetch_interval` setting. `list` and `get` show the interval in a `FETCH` column — `default` means the remote is inheriting, and `list` prints the inherited value to stderr.
+
 ### Commands
 
 > **Note:** Commands in this section require a project code. Either pass `--project <code>` / `-P <code>` on each command, or set `default_project` in your active profile (see §3.1) to omit it entirely.
@@ -708,11 +710,23 @@ opschain git-remotes create \
   --ssh-key-file ~/.ssh/opschain_rsa \
   --add-known-host
 
+# Create a remote fetched every 5 minutes instead of on the inherited interval
+opschain git-remotes create \
+  --name github \
+  --url https://github.com/acme/infra.git \
+  --user gituser \
+  --password ghp_token \
+  --periodic-fetch-interval 300
+
 # Update credentials (name is immutable; url and public-url can be changed)
 opschain git-remotes update github --password new_token
 opschain git-remotes update github --ssh-key-file ~/.ssh/new_key --passphrase 's3cr3t'
 opschain git-remotes update github --url git@github.com:acme/infra.git --add-known-host
 opschain git-remotes update github --public-url https://github.com/acme/infra
+
+# Change the fetch interval, then go back to the inherited default
+opschain git-remotes update github --periodic-fetch-interval 900
+opschain git-remotes update github --periodic-fetch-interval 0
 
 # Archive a remote (soft-delete)
 opschain git-remotes archive github
@@ -733,6 +747,7 @@ opschain git-remotes delete github
 | `--password` | No | Password/token for HTTPS authentication |
 | `--passphrase` | No | Passphrase for the SSH private key |
 | `--ssh-key-file` | No | Path to SSH private key file |
+| `--periodic-fetch-interval` | No | Seconds between periodic fetches of this remote, 60–86400. Omit to inherit the project/global `git_remote.periodic_fetch_interval` setting |
 | `--add-known-host` | No | Scan the SSH remote host key and register it in the global known_hosts setting (superuser only) |
 
 **Update flags:** at least one of the following must be provided.
@@ -745,9 +760,12 @@ opschain git-remotes delete github
 | `--password` | Password/token for HTTPS authentication |
 | `--passphrase` | Passphrase for the SSH private key |
 | `--ssh-key-file` | Path to SSH private key file |
+| `--periodic-fetch-interval` | Seconds between periodic fetches of this remote, 60–86400. Pass `0` to go back to inheriting the project/global setting |
 | `--add-known-host` | When changing to an SSH URL, scan the new host key and register it in the global known_hosts setting (superuser only) |
 
 > **Tip:** Use the `--id` flag on `get`, `archive`, `update`, and `delete` to reference a remote by UUID instead of its human-readable name.
+
+Updating only `--periodic-fetch-interval` skips the check that the remote is reachable. Any other update still verifies it.
 
 ---
 
