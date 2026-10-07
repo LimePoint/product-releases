@@ -798,6 +798,10 @@ opschain projects settings update myproject --data '{"log_level": "info"}'
 opschain projects settings versions myproject
 ```
 
+Environments, assets and agents have the same commands with the same flags: `properties get`,
+`update`, `versions` and `store-file`, and `settings get`, `update` and `versions`. Only the way you
+name the node differs; the sections for each show it.
+
 These show what is set *on* the project. For the merged result — repository properties plus the
 project's own — use `opschain projects converged-properties myproject` or
 `converged-settings`; see [§21](#21-converged-properties-and-settings).
@@ -964,6 +968,7 @@ opschain environments properties versions dev
 
 opschain environments settings get staging
 opschain environments settings update staging --from-file settings.json
+opschain environments settings versions staging
 ```
 
 These show what is set *on* the environment. For the merged result — repository and project values
@@ -1230,8 +1235,14 @@ prints one code per line for every node, ready to pipe into a change.
 opschain assets properties get myasset
 opschain assets properties update myasset \
   --data '{"replicas": 3, "image_tag": "v2.1.0"}'
+opschain assets properties versions myasset -E dev
+
 opschain assets settings get myasset -E dev
+opschain assets settings update myasset -E dev --data '{"log_level": "debug"}'
+opschain assets settings versions myasset -E dev --limit 5
 ```
+
+Give `-E` for an asset in an environment, and leave it out for a project-level asset.
 
 These show what is set *on* the asset. For the values an action will actually run with — the
 template, project, environment and asset layers merged — use
@@ -1437,7 +1448,11 @@ opschain agents properties get myagent -P myproject
 opschain agents properties update myagent -P myproject \
   --data '{"key": "value"}' --version 1
 
+opschain agents properties versions myagent -P myproject
+
 opschain agents settings get myagent -P myproject
+opschain agents settings update myagent -P myproject --from-file settings.json
+opschain agents settings versions myagent -P myproject
 ```
 
 ### 10.8 Converged properties and settings
@@ -3489,7 +3504,7 @@ Each piece is collected with your own access, so the bundle holds only what you 
 - **Steps** — the step tree with per-step status.
 - **Logs** — the change log (`logs/change.log`), which holds every step's lines, plus per-step logs
   under `logs/steps/`. By
-  default only the genuinely failed step(s) (status `error`/`failed`) are captured — not the
+  default only the genuinely failed step(s) (status `error` or `system_error`) are captured — not the
   `aborted`/`cancelled` steps that were merely stopped downstream of the failure. Use
   `--step-logs all` for every step or `--step-logs none` to skip per-step logs. Each line reads
   `<timestamp> [<category>] <message>` with the timestamp in UTC — the same format as a log saved
@@ -3530,7 +3545,7 @@ artifacts are safe to attach to a ticket.
 | `--out-file` | `<binary>-support-<change-id>.zip` | Output path. A `.md` file when combined with `--summary-only`. |
 | `--summary-only` | `false` | Emit only the Markdown summary (to `--out-file`, or stdout if unset); no archive. |
 | `--log-limit` | `2000` | Maximum log lines to collect **per log file** (`logs/change.log` and each step log). `0` collects every line; when capped, the newest lines are kept. A negative value is an error. |
-| `--step-logs` | `failed` | Which per-step logs to collect under `logs/steps/`: `failed` (only `error`/`failed` steps — the actual failures, not downstream `aborted`/`cancelled` steps), `all` (every step), or `none` (skip). |
+| `--step-logs` | `failed` | Which per-step logs to collect under `logs/steps/`: `failed` (only `error` and `system_error` steps — the actual failures, not downstream `aborted`/`cancelled` steps), `all` (every step), or `none` (skip). |
 | `--utc` | `false` | Render `SUMMARY.md` timestamps in UTC. By default they use the local time zone of the machine running the CLI, taken from `TZ` or `/etc/localtime`; when the CLI can't name the zone (on Windows, when `TZ` holds a POSIX rule such as `AEST-10AEDT`, or when `/etc/localtime` is a copy rather than a link) the summary uses UTC. Log files always use UTC. |
 
 Generating a bundle for a large change can take a while. The command prints
