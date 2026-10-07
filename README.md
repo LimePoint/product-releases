@@ -34,7 +34,9 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
    - [Environment properties and settings](#environment-properties-and-settings)
 8. [Asset Templates](#8-asset-templates)
    - [Commands](#commands-3)
+   - [Manage template versions](#manage-template-versions)
    - [View the resolved template for an asset](#view-the-resolved-template-for-an-asset)
+   - [Assign a template version to an asset](#assign-a-template-version-to-an-asset)
 9. [Assets](#9-assets)
    - [Commands](#commands-4)
    - [Viewing an action's steps](#viewing-an-actions-steps)
@@ -50,6 +52,7 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [10.6 Kubernetes events](#106-kubernetes-events)
     - [10.7 Properties and settings](#107-properties-and-settings)
     - [10.8 Converged properties and settings](#108-converged-properties-and-settings)
+    - [10.9 Agent templates](#109-agent-templates)
 11. [Changes (Executing Actions)](#11-changes-executing-actions)
     - [11.1 What a change is](#111-what-a-change-is)
     - [11.2 Creating changes](#112-creating-changes)
@@ -118,6 +121,7 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [20.4 Pods and their logs](#204-pods-and-their-logs)
     - [20.5 Deleting a stuck pod](#205-deleting-a-stuck-pod)
     - [20.6 Drain before an upgrade](#206-drain-before-an-upgrade)
+    - [20.7 Licence](#207-licence)
 21. [Converged properties and settings](#21-converged-properties-and-settings)
     - [See the merged values](#see-the-merged-values)
     - [Find out where a value came from](#find-out-where-a-value-came-from)
@@ -246,7 +250,7 @@ docker run --rm \
 
 ```bash
 opschain version
-# opschain version 1.0.0
+# opschain client version: 1.0.0
 #   commit: abc1234
 #   built:  2025-01-01 00:00:00 UTC
 ```
@@ -327,6 +331,8 @@ opschain config profiles update staging --token "" --username alice --password s
 Deleting the current profile leaves no profile selected. Until you pick another with
 `opschain config profiles use <name>`, commands stop with
 `no profile selected - run 'opschain config profiles use <name>' or pass --profile`.
+If it was your only profile, the error is instead
+`no API URL configured - run 'opschain config profiles add <name>' or set OPSCHAIN_API_URL`.
 `OPSCHAIN_API_URL` and the other environment variables (§3.3) still work without a profile.
 
 **Reducing repetition with profiles:**
@@ -410,6 +416,8 @@ OpsChain supports bearer token authentication as an alternative to username/pass
 #### `tokens login` — obtain and save a token
 
 `tokens login` authenticates with username and password, receives a bearer token from the API, and saves it to the active profile. All subsequent commands automatically use the bearer token.
+The profile must already exist (create it with `config profiles add`); `tokens login` does not work with
+environment variables alone.
 
 ```bash
 # Interactive — prompts for username and password
@@ -421,11 +429,11 @@ opschain tokens login --username alice --password s3cr3t
 # Non-interactive — supply credentials via environment variables
 OPSCHAIN_USERNAME=alice OPSCHAIN_PASSWORD=s3cr3t opschain tokens login
 
-# Against a specific API URL (useful before a profile is fully set up)
+# Against a specific API URL (overrides the profile's URL)
 opschain tokens login --api-url https://staging.opschain.example.com
 ```
 
-After a successful login, the token is written to the active profile's `token` field. With `-q`, `tokens login` prints only the new token's ID. You can confirm which auth method is being used with `--debug` (see §17).
+After a successful login, the token is written to the active profile's `token` field. With `-q`, `tokens login` prints only the new token's ID. You can confirm which auth method is being used with `--debug` (see §25).
 
 > **Token expiry:** Access tokens are short-lived (typically a few hours). Re-run `opschain tokens login` when a token expires — you will get a 401 response if it has.
 
@@ -495,7 +503,7 @@ opschain tokens create-api-key --description "CI deploy token" --expiry-date 202
 | Flag | Required | Description |
 |---|---|---|
 | `--description` | Yes | Human-readable label for the token |
-| `--expiry-date` | Yes | Expiry date in `YYYY-MM-DD` format, in the future. The key expires at the end of that day |
+| `--expiry-date` | Yes | Expiry date in `YYYY-MM-DD` format, in the future and at most one year away. The key expires at the end of that day |
 | `--username` | No | Create the key for this user. Must be given with `--password` |
 | `--password` | No | Password for `--username` |
 
@@ -593,7 +601,8 @@ opschain projects get "Web App"           # by name
 opschain projects get 7f3e9c2a-1b4d-...   # by ID
 ```
 
-A bare argument is matched as a code first, then by ID, then by name. A code match takes a single request; matching a name or ID lists the resource first, which costs one extra call.
+A bare argument is matched as a code first, then by ID, then by name. A code match takes a single request. A bare name or ID first misses as a code and then lists the resource,
+which costs two extra calls; forcing it with `--name` or `--id` skips the miss.
 
 To force one interpretation, use a flag in place of the positional argument:
 
@@ -620,7 +629,7 @@ opschain assets get myasset -P web-app -E dev --uuid
 opschain git-remotes get github -P web-app --uuid
 ```
 
-`--uuid` works on `get` for every resource you look up by code, name, or ID: projects, environments, assets, agents, workflows, git remotes, templates, agent templates, and authorisation policies. It resolves the identifier the same way as a normal `get`, so you can combine it with `--code` / `--name` / `--id`. It overrides `-q` and `-o` — you always get the bare UUID.
+`--uuid` works on `get` for every resource you look up by code, name, or ID: projects, environments, assets, agents, workflows, git remotes, templates, agent templates, remote runner targets, and authorisation policies. It resolves the identifier the same way as a normal `get`, so you can combine it with `--code` / `--name` / `--id` (templates, agent templates and remote runner targets take `--code` / `--id` only). It overrides `-q` and `-o` — you always get the bare UUID.
 
 This is the difference between the two: for a code-based resource, `get -q` prints the code, `get --uuid` prints the UUID.
 
@@ -758,7 +767,7 @@ opschain projects properties get myproject --version 3
 # Update properties inline
 opschain projects properties update myproject --data '{"db_host": "prod-db.internal"}'
 
-# Update from a JSON/YAML file
+# Update from a JSON file
 opschain projects properties update myproject --from-file properties.json
 
 # List all versions (newest first)
@@ -897,7 +906,9 @@ opschain git-remotes delete github
 
 > **Tip:** Use the `--id` flag on `get`, `archive`, `update`, and `delete` to reference a remote by UUID instead of its human-readable name.
 
-Updating only `--periodic-fetch-interval` skips the check that the remote is reachable. Any other update still verifies it.
+The server checks that the remote is reachable only when an update changes the URL or the credentials
+(`--user`, `--password`, `--ssh-key-file`, `--passphrase`). Changing only `--periodic-fetch-interval`
+or `--public-url` skips the check.
 
 ---
 
@@ -977,10 +988,18 @@ opschain templates list
 opschain templates list --exclude-archived-nodes
 opschain templates get my-template-code --exclude-archived-nodes
 
-# Get a template by code, name, or ID (or force with --code / --name / --id — see §4)
+# Get a template by code, name, or ID (or force with --code / --id — see §4)
 opschain templates get my-template-code
 opschain templates get --id 7f3e9c2a-...
 opschain templates get my-template-code -o json
+
+# Create a template backed by a git remote
+opschain templates create -P myproject --code app --name "Application" --git-remote github
+
+# Rename it, repoint it, or disable it
+opschain templates update app -P myproject --name "App Server"
+opschain templates update app -P myproject --git-remote github-mirror
+opschain templates update app -P myproject --disabled=true
 
 # Archive a template (hidden and unusable, but recoverable with unarchive)
 opschain templates archive my-template-code
@@ -1027,6 +1046,9 @@ opschain templates versions unarchive "Application" v1.0 -P myproject
 # Lock/unlock a version against changes to its pinned revision
 opschain templates versions lock "Application" v1.0 -P myproject
 opschain templates versions unlock "Application" v1.0 -P myproject
+
+# Unlock a version that assets are using (a plain unlock refuses)
+opschain templates versions unlock "Application" v1.0 -P myproject --ignore-in-use
 
 # Delete a version (archived instead if an asset has used it)
 opschain templates versions delete "Application" v1.0 -P myproject
@@ -1193,10 +1215,10 @@ structure:
 │  │  └─ Install Binaries  [Install Binaries-1]
 ```
 
-Each node is labelled by its name — the value you pass to `changes create --action` /
-`changes execute --action` to run that step. When two sibling steps share a name (MintModel
-templates repeat names like "Install Binaries"), a bracketed code such as `[Install Binaries-1]`
-is added to tell them apart; use that code as the `--action` value for the duplicate.
+Each node is labelled with its name, followed by its runnable code in brackets when the two
+differ — for example `[Install Binaries-1]`, which MintModel templates use to tell apart sibling
+steps that share a name. Pass the bracketed code, or the name when there is no bracket, as the
+`changes create --action` / `changes execute --action` value to run that step.
 
 The tree mirrors what the API returns, so a step that also exists as a top-level action appears
 both places. `-o json` and `-o yaml` return the same tree with the full node detail; `--tree -q`
@@ -1321,6 +1343,9 @@ opschain agents create -P myproject \
 opschain agents update myagent -P myproject --name "New Name"
 opschain agents update myagent -P myproject --archived=true
 
+# See the template and version an agent is built from
+opschain agents template get myagent -P myproject
+
 # Delete an agent
 opschain agents delete myagent -P myproject
 ```
@@ -1337,7 +1362,7 @@ opschain agents build myagent -P myproject
 opschain agents status myagent -P myproject
 ```
 
-The build task response includes a task ID. Use `--output json` to see full task details including `status_code` (`initializing`, `running`, `success`, `failed`).
+The build task response includes a task ID. Use `--output json` to see full task details including `status_code` (`initializing`, `running`, `success`, `error`, `cancelled`).
 
 ### 10.3 Starting and stopping agents
 
@@ -1417,7 +1442,9 @@ opschain agents settings get myagent -P myproject
 
 ### 10.8 Converged properties and settings
 
-Shows the fully merged properties or settings that will apply to the agent — combining template (repository) properties, project properties, and agent-specific properties.
+Shows the fully merged properties or settings that will apply to the agent. Properties combine
+template (repository) properties, project properties, and agent-specific properties; settings
+combine the global, project, and agent settings, and list only those that differ from global.
 
 ```bash
 # Current merged properties
@@ -1440,13 +1467,32 @@ The same pair of commands exists for projects, environments, and assets — see
 
 ---
 
+### 10.9 Agent templates
+
+Agent templates are the agent counterpart of asset templates (§8): each defines an agent backed by
+a git remote, with git-pinned versions. `agent-templates` (alias `agent-template`) takes the same
+subcommands as `templates` — `list`, `get`, `create`, `update`, `archive`, `unarchive`, `assign`, and
+`versions list/get/create/update/archive/unarchive/lock/unlock` — and acts only on agent-type
+templates.
+
+```bash
+opschain agent-templates list -P myproject
+opschain agent-templates get my-agent-template -P myproject
+
+# Move agents onto another version of their template (rebuilds their images)
+opschain agent-templates assign my-agent-template v2 -P myproject --agents myagent,otheragent
+```
+
+`assign` changes only which version of its own template each agent uses; an agent built from a
+different template is refused.
+
 ## 11. Changes (Executing Actions)
 
 ### 11.1 What a change is
 
 A **change** runs a single action against a project, environment, or asset. Changes are how OpsChain runs an automated process — deployments, configuration updates, compliance checks, data migrations, or custom scripts. Each change has a unique ID, a status code, start/end timestamps, and a log stream.
 
-Terminal statuses: `success`, `error`, `cancelled`, `failed`, `aborted`, `rejected`.
+Terminal statuses: `success`, `error`, `system_error`, `cancelled`, `aborted`, `rejected`.
 
 ### 11.2 Creating changes
 
@@ -1483,7 +1529,7 @@ opschain changes create -E dev -A myasset -a deploy -w --show-steps
 # Stream logs with UTC timestamps
 opschain changes create -E dev -A myasset -a deploy -w --show-logs --utc
 
-# Have the server release any wait step automatically (no need to wait or stay attached)
+# Have the server release any wait step automatically, except approval steps (no need to wait or stay attached)
 opschain changes create -E dev -A myasset -a deploy --auto-continue-wait-steps
 
 # Skip steps matching a glob pattern (repeat the flag for multiple patterns)
@@ -1559,7 +1605,7 @@ opschain changes create \
 | `--wait-for-completion` | `-w` | No | Poll every 5 seconds until terminal state |
 | `--show-logs` | | No | Stream logs in real-time (requires `-w`) |
 | `--show-steps` | | No | Show a tree of the change's steps that updates in place as they run (requires `-w`; cannot be combined with `--show-logs`) |
-| `--auto-continue-wait-steps` | | No | Have the server release any wait step the change hits, so it runs to completion without pausing. Works whether or not you wait |
+| `--auto-continue-wait-steps` | | No | Have the server release any wait step the change hits (approval steps excluded), so it runs through without pausing. Works whether or not you wait |
 | `--utc` | | No | Display timestamps in UTC |
 | `--from-file` | | No | Load entire request from a JSON file |
 
@@ -1571,9 +1617,9 @@ overall status. Each node shows the step's name, status, and how long it has bee
 
 ```text
 Change running  [+01:20]
-└─ ✔ Provision  [success] (0:12)
-   ├─ ● Deploy binaries  [running] (0:47)
-   │  └─ ● Copy files  [running] (0:30)
+└─ ✔ Provision  [success] (00:12)
+   ├─ ● Deploy binaries  [running] (00:47)
+   │  └─ ● Copy files  [running] (00:30)
    └─ · Verify  [queued]
 ```
 
@@ -1613,7 +1659,7 @@ opschain change execute -E dev --action Shutdown --assets '*' --dry-run
 # Create the changes, then wait for all of them to finish
 opschain change execute -E dev --action Shutdown --assets db1,db2 --wait-for-completion
 
-# Have the server release any wait step each change hits so none of them stall
+# Have the server release any wait step (other than an approval step) each change hits so none of them stall
 opschain change execute -E dev --action Shutdown --assets db1,db2 --auto-continue-wait-steps
 
 # Wait, and watch each change's step tree update in place (interactive terminal)
@@ -1634,7 +1680,7 @@ opschain change execute -E dev --action Shutdown --assets db1,db2 -q
 | `--dry-run` | | No | Show the matched/skipped matrix without creating any changes |
 | `--wait-for-completion` | `-w` | No | Poll every created change to a terminal state and report final statuses. On an interactive terminal the summary table refreshes in place every 5 seconds, updating each change's status live (`pending`→`running`→`success`/`error`). When output is piped, JSON/YAML, or `-q`, it polls silently and prints once at the end |
 | `--show-steps` | | No | While waiting, show each created change's step tree and refresh it in place instead of the flat status table. Interactive terminal only — piped/JSON/`-q` runs keep the summary (requires `-w`) |
-| `--auto-continue-wait-steps` | | No | Have the server release any wait step each created change hits, so none of them stall in the `waiting` state. Works whether or not you wait |
+| `--auto-continue-wait-steps` | | No | Have the server release any wait step (other than an approval step) each created change hits, so none of them stall in the `waiting` state. Works whether or not you wait |
 | `--template-version` | `-t` | No | Template version override (asset scope) |
 | `--metadata` / `--property-overrides` / `--settings-overrides` | | No | JSON objects applied to every created change |
 | `--skip-steps` | | No | Glob pattern matching step `full_path`s to skip (repeatable; see §11.10) |
@@ -1642,14 +1688,14 @@ opschain change execute -E dev --action Shutdown --assets db1,db2 -q
 | `--build-without-cache` | | No | Build container without Docker cache |
 
 - Output is a per-target summary table (`ENVIRONMENT`, `ASSET`, `RESULT`, `CHANGE ID`, `DETAIL`); `-o json`/`yaml` emit it structured; `-q` prints only the created change IDs.
-- A `skipped` asset's `DETAIL` says why: `action not supported`, or `not found in project '<P>' environment '<E>'` (the resolved project is named, so a wrong `-P`/`default_project` is easy to spot). An unexpected API failure (auth, server error) is a separate `error` row showing the message, not a skip.
-- **Exit code:** `0` when every target either started a change or was cleanly skipped. Non-zero if any change failed to create, an asset lookup errored (non-404), or (with `--wait`) any change ended in a non-`success` terminal state.
+- A `skipped` asset's `DETAIL` says why: `action not supported`, or `not found in project '<P>' environment '<E>'` (`not found in project '<P>'` for a project-level asset; the resolved project is named, so a wrong `-P`/`default_project` is easy to spot). An unexpected API failure (auth, server error) is a separate `error` row showing the message, not a skip.
+- **Exit code:** `0` when every target either started a change or was cleanly skipped. Non-zero if any change failed to create, an asset lookup errored (non-404), or (with `-w`/`--wait-for-completion`) any change ended in a non-`success` terminal state.
 - No interleaved log streaming for bulk runs — watch an individual change with `changes attach <id>`.
 - `--show-steps` (with `-w`, on an interactive terminal) replaces the live status table with one section per change — a header line (`[env] asset (change-id) status`) followed by that change's step tree, all redrawing in place. Skipped and errored targets stay as one-line entries. Off a TTY, or with `-q`/`-o json,yaml`, it prints a note and falls back to the summary. See §11.2 for the glyphs.
 
 ### 11.4 Listing and filtering changes
 
-By default, `changes list` returns the 15 most-recent changes across all scopes. It shows changes only. Workflow runs are listed under `wf runs list`; pass `--include-workflow-runs` to show them here alongside changes.
+By default, `changes list` returns the 15 most-recent changes across all scopes (or across your default project, if one is set). It shows changes only. Workflow runs are listed under `wf runs list`; pass `--include-workflow-runs` to show them here alongside changes.
 
 Each row shows the change's `ACTION`, `STATUS`, and the node it ran against — `PROJECT`,
 `ENVIRONMENT`, and `ASSET`. `ENVIRONMENT` and `ASSET` are blank when the change ran at a
@@ -1792,7 +1838,7 @@ log, use `changes steps logs` (see below).
 
 **Follow logs in real time** with `--tail` (`-f`). It prints the initial batch,
 then streams new log lines as they arrive, stopping automatically once the change
-reaches a terminal status (`success`, `error`, `failed`, `cancelled`, `aborted` or `rejected`). Press
+reaches a terminal status (`success`, `error`, `system_error`, `cancelled`, `aborted` or `rejected`). Press
 `Ctrl-C` to stop early.
 
 ```bash
@@ -1848,7 +1894,7 @@ If you started a change **without** `--wait-for-completion` (for example with
 experience as `create --wait-for-completion`: it polls the change status every
 5 seconds, reports each status transition, and — by default — streams log lines
 in real time until the change reaches a terminal status (`success`, `error`,
-`failed`, `cancelled`, `aborted` or `rejected`). Press `Ctrl-C` to detach; this does **not** affect the
+`system_error`, `cancelled`, `aborted` or `rejected`). Press `Ctrl-C` to detach; this does **not** affect the
 running change.
 
 ```bash
@@ -1876,7 +1922,7 @@ opschain changes attach "$CHANGE_ID"
 ```
 
 Like `create --wait-for-completion`, `attach` exits non-zero when the change ends
-in a non-success terminal state (`error`, `cancelled`, `failed`, `aborted`, `rejected`), so it is safe
+in a non-success terminal state (`error`, `system_error`, `cancelled`, `aborted`, `rejected`), so it is safe
 to use in CI. If the change has already finished when you attach, its final state
 is printed and the command exits immediately; add `--show-steps` to also print the
 completed step tree — a quick way to inspect a finished change's steps.
@@ -1889,9 +1935,8 @@ completed step tree — a quick way to inspect a finished change's steps.
 | `--utc` | `false` | Display log timestamps in UTC instead of local time |
 | `--quiet` / `-q` | `false` | Wait, then print only the change ID |
 
-> **Note:** `attach` streams logs including child steps. For finer control over
-> which logs are shown (limit, root-step-only), use `changes logs --tail` (§11.4)
-> instead.
+> **Note:** `attach` streams every step's log lines. To choose how many lines to start from, use
+> `changes logs --tail`; to read one step's log, use `changes steps logs` (both §11.5).
 
 ### 11.7 Cancel a change
 
@@ -1901,7 +1946,8 @@ opschain changes cancel b5bf89b6 -q   # prints ID on success
 opschain changes cancel b5bf89b6 -o json   # prints the change after the cancel
 ```
 
-> **Note:** Only changes in `running` or `pending` states can be cancelled.
+> **Note:** Any change that hasn't finished can be cancelled — pending, queued, running or waiting.
+> Cancelling a finished change returns `Change cannot be cancelled because it is already finalised`.
 
 ### 11.8 Continue a waiting change
 
@@ -1942,9 +1988,10 @@ expects. Combine it with `--step` or `--all` the same way as a plain continue.
 > from the API (e.g. `Cannot continue step because it is in the "success" state`).
 
 **Continue automatically:** to run a change straight through its wait steps without a manual
-`continue`, pass `--auto-continue-wait-steps` on `create`, `execute`, or `retry`. This sets the
-flag on the change itself, so the **server** releases each wait step as the change hits it —
-you don't need `--wait-for-completion` and you don't need to stay attached. A change created
+`continue`, pass `--auto-continue-wait-steps` on `create` or `execute`. This sets the flag on the change
+itself, so the **server** releases each wait step (other than an approval step) as the change hits
+it — you don't need `--wait-for-completion` and you don't need to stay attached. On `retry` the flag
+is applied by the CLI and needs `-w` (see §11.9). A change created
 without the flag sits at `waiting` until it's continued.
 
 For a change that is **already running** and was created without the flag, `changes attach
@@ -1955,9 +2002,10 @@ that has already moved on — is logged and skipped rather than aborting the wai
 
 ### 11.9 Retry a change
 
-`changes retry` (alias `rerun`) re-runs a change that has finished. It sends a
-retry request to the server, which re-runs the change against the same node using
-the same action and source and links the new change back to the one you retried.
+`changes retry` (alias `rerun`) re-runs a change that did not succeed. It sends a
+retry request to the server, which creates a new change against the same node using
+the same action and source, re-runs every step that didn't succeed (steps that succeeded
+are kept, not repeated), and links the new change back to the one you retried.
 The original change is left untouched.
 
 ```bash
@@ -1980,8 +2028,9 @@ opschain changes retry b5bf89b6 --skip-steps 'deploy/**'
 opschain changes retry b5bf89b6 -q
 ```
 
-The change being retried must be in a terminal state — `success`, `error`,
-`failed`, `cancelled`, `aborted` or `rejected`. Retrying a change that is still `running`, `pending`,
+The change being retried must have ended in `error`, `system_error`, `cancelled`, `aborted`
+or `rejected`. Retrying a `success` change returns `change '<id>' succeeded; only a change that
+ended in error, system_error, cancelled, aborted or rejected can be retried`. Retrying a change that is still `running`, `pending`,
 or `waiting` returns `change '<id>' is not in a terminal state (status: <status>);
 cancel it before retrying`. Cancel it first with `changes cancel` (§11.7).
 
@@ -2076,14 +2125,15 @@ comma-separated lists (§11.3). `--skip-steps` never splits on commas.
 
 | Pattern | Matches |
 | --- | --- |
-| `foo/bar` | exactly that step |
-| `foo/**` | `foo` and every step beneath it, at any depth |
-| `foo/*` | the direct children of `foo` only |
+| `foo/bar` | that step, and so everything beneath it |
+| `foo/*` or `foo/**` | every child of `foo`, and so everything beneath them; `foo` itself still runs |
 | `**/mintmodel:apply_patch_*` | any step whose leaf code starts with `mintmodel:apply_patch_` |
-| `**/*_on_custwprd1otd01_*` | any step scoped to host `custwprd1otd01` |
+| `**/*custwprd1otd01*` | any step whose code mentions host `custwprd1otd01` |
 
-`**` crosses `/` (spans levels); `*` matches within a single segment; `?` matches
-one character. Always single-quote patterns so your shell doesn't expand `*`/`**`
+`**/` matches any number of levels (so `**/x` finds `x` at any depth); a `**` not followed by `/`
+acts like `*`. `*` matches within a single segment; `?` matches one character. Matching is
+case-insensitive. Skipping a step also skips everything beneath it, and a step that requires
+approval still runs even when a pattern matches it. Always single-quote patterns so your shell doesn't expand `*`/`**`
 against local filenames before the CLI sees them.
 
 **Targeting many steps at once.** Where the steps you want to drop share a parent
@@ -2097,7 +2147,7 @@ opschain changes create ... --skip-steps 'Provision/mintmodel:binaries/mintmodel
 opschain changes create ... --skip-steps '**/mintmodel:apply_patch_*'
 
 # Skip everything scoped to one host
-opschain changes create ... --skip-steps '**/*_on_custwprd1otd01_*'
+opschain changes create ... --skip-steps '**/*custwprd1otd01*'
 ```
 
 Reach for repeated exact `--skip-steps` values when the steps don't share a
@@ -2246,7 +2296,7 @@ Error: API error (422): Change is already paused
 
 Workflows are reusable, versioned automation scripts written in YAML that orchestrate multi-step actions. They are project-scoped.
 
-> **Note:** Commands in this section require a project code. Either pass `--project <code>` / `-P <code>` on each command, or set `default_project` in your active profile (see §3.1) to omit it entirely.
+> **Note:** Commands that address a workflow by code need a project code. Either pass `--project <code>` / `-P <code>`, or set `default_project` in your active profile (see §3.1). Commands that take a run or step UUID do not.
 
 ### 12.1 Managing workflows
 
@@ -2289,10 +2339,16 @@ opschain workflows delete deploy-app
 opschain workflows delete-drafts deploy-app
 
 # List versions of a workflow
-opschain workflows versions deploy-app
+opschain workflows versions list deploy-app
 
 # Create a new version from an updated YAML file
 opschain workflows versions create deploy-app --source-yaml-file deploy-app.yaml
+
+# Show one version, publish a draft (or send it back to draft), delete a version
+opschain workflows versions get deploy-app 2
+opschain workflows versions update deploy-app 2 --publish
+opschain workflows versions update deploy-app 2 --draft
+opschain workflows versions delete deploy-app 2    # archived instead if it has been run
 
 # Create/update a version and expand multi-target steps + replace properties,
 # optionally supplying property values used during resolution
@@ -2411,7 +2467,8 @@ Name recipients with any mix of `--notify-user-id` (a username or a user's UUID)
 `--notify-ldap-group`, and `--notify-email`; each is repeatable or comma-separated.
 `--notify-event` picks which events fire a notification — one or more of `cancel`,
 `create`, `error`, `start`, `success`. Name at least one event: targets with no events
-subscribe to nothing (see §11.12).
+subscribe to nothing (see §11.12). OpsChain rejects an unknown event, a user it cannot find, or a
+malformed email address. Omit every `--notify-*` flag and no notifications are configured.
 
 `workflows runs retry` inherits the retried run's subscription. Set any `--notify-*` flag on
 the retry to replace it, targets and events together.
@@ -2466,7 +2523,7 @@ To find a paused step, run `workflows runs steps list $RUN_ID` and look for `wai
 approval step needs.
 
 In `--tree` output, a step that runs an action against a node shows its target and action, e.g.
-`Stop all assets in parallel [change/running] → d1/obpcid (Shutdown)`. This matters for a
+`Stop all assets in parallel  [change/running]  → d1/obpcid (Shutdown)`, after the step's status glyph. This matters for a
 multi-target change, where every fanned-out step shares the same name — the target is what tells
 them apart. The target is shown as `environment/asset` (or just the asset for a project-level
 one), so the same asset run across several environments stays distinguishable (`d1/obpcid` vs
@@ -2506,7 +2563,7 @@ Pausing a run does not pause a change it has already started. Pause that change 
 
 OpsChain supports two ways to schedule automated actions.
 
-> **Note:** Commands in this section require a project code. Either pass `--project <code>` / `-P <code>` on each command, or set `default_project` in your active profile (see §3.1) to omit it entirely.
+> **Note:** `create` needs a project code. Either pass `--project <code>` / `-P <code>`, or set `default_project` in your active profile (see §3.1). `list` uses the project as a scope when one is set; `get`, `update` and `delete` take only the activity ID.
 
 ### 13.1 Two approaches
 
@@ -2746,8 +2803,8 @@ blank for an activity on an environment or project.
 > recreate the activity without it.
 >
 > **Commit file patterns** hold a scheduled change back unless a new commit touches a
-> path you care about. They need `--new-commits-only`; without it the server rejects the
-> activity. Give `--commit-file-pattern` a glob to match, `--commit-file-pattern-exclude`
+> path you care about. They need `--new-commits-only`: without it, `create` stops with
+> `commit file patterns require --new-commits-only`, and the server rejects an `update`. Give `--commit-file-pattern` a glob to match, `--commit-file-pattern-exclude`
 > a glob whose matches do not trigger a run, and repeat either flag for more patterns —
 > they are not comma-separated. By default a run starts when **any** pattern matches;
 > `--commit-file-pattern-match all` requires all of them. On `update`, passing either
@@ -2779,8 +2836,8 @@ blank for an activity on an environment or project.
 > supplies the source, so `create` stops with `--git-remote and --git-rev are not valid for an
 > asset (-A); the asset's template supplies the source`.
 >
-> **You cannot move a scheduled activity to another node.** `update` takes no
-> project, environment, or asset flag, and the API rejects the node attributes outright.
+> **You cannot move a scheduled activity to another node.** `update` ignores
+> `-P`, `-E` and `-A` (it accepts them but they have no effect), and the API rejects the node attributes outright.
 > Create a new activity against the node you want and delete the old one.
 
 ### 13.6 Scheduling examples
@@ -2869,7 +2926,7 @@ opschain authorisation-policies delete --id abc-uuid-123
 Rules control access at specific resource paths. Each rule is a standalone resource that can be associated with one or more policies.
 
 **Permitted rule fields:** `path`, `readable`, `updatable`, `executable`, `deletable`, `name`  
-**Read-only fields** (do NOT send): `code`, `created_by`
+**Read-only fields** (do NOT send): `created_by`
 
 ```bash
 # List all rules for a policy
@@ -2945,7 +3002,7 @@ opschain authorisation-policies assignments remove "Read-Only Users" --all
 
 `set`, `add` and `remove` print the policy's resulting assignments with `-o json` or `-o yaml`, and their IDs with `-q`.
 
-`set` also takes the list as JSON, with `--data` inline or `--from-file`: either a bare array, `[{"username":"alice"},{"groupname":"qa"}]`, or the same array wrapped as `{"assignments":[...]}`. Removing the last assignment leaves the policy with none.
+`set` and `add` also take the list as JSON, with `--data` inline or `--from-file`: either a bare array, `[{"username":"alice"},{"groupname":"qa"}]`, or the same array wrapped as `{"assignments":[...]}`. Removing the last assignment leaves the policy with none.
 
 ### 14.5 Examples
 
@@ -2975,7 +3032,7 @@ opschain authorisation-policies assignments set "Dev Deployers" \
 opschain authorisation-policies create "Platform Admins"
 opschain authorisation-policies rules create "Platform Admins" \
   --path "/" \
-  --readable --updatable --executable \
+  --readable --updatable --executable --deletable \
   --name "Full access"
 
 opschain authorisation-policies assignments set "Platform Admins" \
@@ -3007,8 +3064,8 @@ These flags cover the most common filtering needs:
 
 ```bash
 # Events of a specific type
-opschain events list --type "change.completed"
-opschain events list -t "workflow.run.started"
+opschain events list --type "api:changes:success"
+opschain events list -t "api:workflow_runs:start"
 
 # Events by a specific user
 opschain events list --username alice
@@ -3044,7 +3101,9 @@ Notes:
 - `--environment` and `--asset` both require `--project` (via the flag, the `OPSCHAIN_DEFAULT_PROJECT` env var, or a profile `default_project`).
 - `-A` without `-E` selects the project-level asset with that code, the same way `changes create` reads the flags. For an asset inside an environment, give `-E` as well. Earlier releases treated `-A` alone as "this asset in any environment", but matched any asset whose code started with the value, in any project. `changes list` had the same fault.
 - These flags translate to `event_node_path` filters for you, so you don't have to remember the `_eq` vs `_start` distinction (using `_eq` on an environment would silently drop its assets' events — scoping handles this correctly).
-- Scoping flags compose with the convenience filters and `--filter` (all AND-ed together), e.g. `opschain events list -P myproject -E dev --type "change.completed"`.
+- Scoping flags compose with the convenience filters and `--filter` (all AND-ed together), e.g. `opschain events list -P myproject -E dev --type "api:changes:success"`.
+- A default project (`OPSCHAIN_DEFAULT_PROJECT` or a profile `default_project`) scopes `events list` as if you had passed `-P`, so events with no node, such as custom events, drop out. Unset it to see every event.
+- Event types have three colon-separated parts, `<source>:<model>:<event>` — for example `api:changes:success` or `api:workflow_runs:start`.
 - The listing table includes a `NODE PATH` column showing each event's `event_node_path`.
 
 For hand-rolled `event_node_path` filters, see the `--filter` section below.
@@ -3057,10 +3116,10 @@ The `--filter` flag maps directly to OpsChain's Ransack-style filter parameters.
 
 | Predicate | Meaning | Example |
 |---|---|---|
-| `_eq` | Exact match | `type_eq=change.completed` |
-| `_cont` | Contains (case-sensitive) | `type_cont=change` |
-| `_start` | Starts with | `type_start=change.` |
-| `_end` | Ends with | `type_end=.failed` |
+| `_eq` | Exact match | `type_eq=api:changes:success` |
+| `_cont` | Contains (case-insensitive) | `type_cont=changes` |
+| `_start` | Starts with | `type_start=api:changes:` |
+| `_end` | Ends with | `type_end=:error` |
 | `_gt` | Greater than | `created_at_gt=2026-01-01T00:00:00Z` |
 | `_lt` | Less than | `created_at_lt=2026-04-30T00:00:00Z` |
 | `_gteq` | Greater than or equal | `created_at_gteq=2026-04-01T00:00:00Z` |
@@ -3072,7 +3131,7 @@ The `--filter` flag maps directly to OpsChain's Ransack-style filter parameters.
 
 ```bash
 # All failed change events
-opschain events list --filter "type_end=.failed"
+opschain events list --filter "type_eq=api:changes:error"
 
 # Events for a specific project node path
 opschain events list --filter "event_node_path_eq=/projects/myproject"
@@ -3087,7 +3146,7 @@ opschain events list \
 
 # Combine filters: failed changes in a project this month
 opschain events list \
-  --filter "type_end=.failed" \
+  --filter "type_eq=api:changes:error" \
   --filter "event_node_path_start=/projects/myproject" \
   --filter "created_at_gteq=2026-04-01T00:00:00Z" \
   --limit 100
@@ -3198,10 +3257,11 @@ opschain changes list -P myproject
 
 ```bash
 export OPSCHAIN_API_URL=${{ secrets.OPSCHAIN_API_URL }}
-# Login using username/password secrets, save token to a temp profile
-opschain --profile ci tokens login \
+# Create a profile for this run, then swap its credentials for a bearer token
+opschain config profiles add ci --api-url "$OPSCHAIN_API_URL" \
   --username ${{ secrets.OPSCHAIN_USERNAME }} \
   --password ${{ secrets.OPSCHAIN_PASSWORD }}
+opschain --profile ci tokens login
 
 # Subsequent commands use the bearer token automatically
 opschain --profile ci changes list -P myproject
@@ -3221,7 +3281,7 @@ echo "Change: $CHANGE_ID"
 
 ### Wait for completion and check exit code
 
-The `--wait-for-completion` flag returns a non-zero exit code on failure (`error`, `cancelled`, `failed`), making it CI-friendly.
+The `--wait-for-completion` flag returns a non-zero exit code when the change ends in any status other than `success`, making it CI-friendly.
 
 ```bash
 #!/usr/bin/env bash
@@ -3250,8 +3310,9 @@ opschain changes list -P myproject --status error --limit 1 -o json \
 opschain changes list --status running -o json \
   | jq '.[] | {id: .id, started_at: .attributes.started_at}'
 
-# Wait for a change by ID, then check its final status
+# Wait for a change by ID (attach exits non-zero on failure), then check its final status
 CHANGE_ID="b5bf89b6-6512-4f18-8b4d-cdac8a597231"
+opschain changes attach "$CHANGE_ID" -q >/dev/null || true
 STATUS=$(opschain changes get $CHANGE_ID -o json | jq -r '.attributes.status_code')
 echo "Final status: $STATUS"
 ```
@@ -3357,11 +3418,11 @@ pipeline {
 ```
 
 :::tip
-Store `OPSCHAIN_API_URL`, `OPSCHAIN_USERNAME`, `OPSCHAIN_PASSWORD`, and `OPSCHAIN_PROJECT` as **Secret Text** credentials in Jenkins (**Manage Jenkins → Credentials**) and inject them via the `credentials()` helper as shown above — never hard-code them in the `Jenkinsfile`.
+Store `OPSCHAIN_API_URL`, `OPSCHAIN_TOKEN` and `OPSCHAIN_PROJECT` as **Secret Text** credentials in Jenkins (**Manage Jenkins → Credentials**) and inject them via the `credentials()` helper as shown above — never hard-code them in the `Jenkinsfile`.
 :::
 
 :::tip
-`--wait-for-completion -q` prints only the change ID to stdout at completion, which is useful if you need to capture the ID up-front — for example, to record it in a build artefact before the wait finishes:
+`--wait-for-completion -q` suppresses the progress and log output and prints only the change ID to stdout once the change finishes, so a script can capture it (the exit code still reflects the outcome):
 
 ```bash
 CHANGE_ID=$(./opschain changes create \
@@ -3395,7 +3456,8 @@ opschain scheduled-activities create \
 When a change fails and you need to raise a defect or feature request with LimePoint support,
 `support bundle` collects everything support typically asks for — in one command — so you don't
 have to hunt down the change, its logs, the properties it ran with, and version numbers by hand.
-The OpsChain server builds the bundle, using your permissions, and the CLI saves it.
+The OpsChain server builds the bundle, using your permissions, and the CLI saves it. It is the same
+bundle the GUI's **Download support bundle** button produces.
 
 ```bash
 # Write <binary>-support-<change-id>.zip in the current directory
@@ -3409,12 +3471,18 @@ opschain support bundle <change-id> --summary-only
 
 # Collect everything: full logs for all steps
 opschain support bundle <change-id> --log-limit 0 --step-logs all
+
+# Show summary timestamps in UTC (default is the local system timezone)
+opschain support bundle <change-id> --utc
 ```
 
 ### What it collects
 
-Collection is **best-effort**: if the server can't fetch a piece (permissions, a change with no
-asset, etc.) it is noted in `manifest.json` and `SUMMARY.md` rather than failing the command.
+Collection is **best-effort**: if the server can't fetch a piece (for example, one you lack
+permission to read) it is noted in `manifest.json` and `SUMMARY.md` rather than failing the command.
+Only the change itself is required: if you can't read it, the command fails with
+`change '<id>' not found`.
+Each piece is collected with your own access, so the bundle holds only what you are permitted to see.
 
 - **Change** — status, action, git remote/rev/commit, who ran it, timestamps, and its metadata
   (comments + any custom metadata, surfaced in `SUMMARY.md`; also present verbatim in `change.json`).
@@ -3432,10 +3500,11 @@ asset, etc.) it is noted in `manifest.json` and `SUMMARY.md` rather than failing
   change ran under (`project`, then `environment` and `asset` where the change has them).
 - **Template** — the template and template version the change ran against (`template/`), including
   the git remote/rev/commit that pins the source.
-- **MintModel** (mintmodel changes only) — the rendered MintModel JSON and the source ERB
-  (`mintmodel/mintmodel.json` and `mintmodel/mintmodel.json.erb`).
+- **MintModel** (mintmodel changes only) — the rendered MintModel JSON (`mintmodel/mintmodel.json`)
+  and the asset's *current* source ERB (`mintmodel/mintmodel.json.erb`), which may have changed
+  since the change ran.
 - **Server info** — OpsChain version, API version, DB version, runner image, licence.
-- **Client** — the client that requested the bundle (`opschain-cli` or `opschain-gui`), its version, commit and build date.
+- **Client** — the client that requested the bundle (`opschain-cli`, `mintpress-cli` or `opschain-gui`), its version, commit and build date.
 - **Recent run history** — the last 5 runs of this change's action at the same node (id, status,
   date), plus the most recent successful run — so support can see the trend and when it last
   worked. Shown in `SUMMARY.md`.
@@ -3462,17 +3531,20 @@ artifacts are safe to attach to a ticket.
 | `--summary-only` | `false` | Emit only the Markdown summary (to `--out-file`, or stdout if unset); no archive. |
 | `--log-limit` | `2000` | Maximum log lines to collect **per log file** (`logs/change.log` and each step log). `0` collects every line; when capped, the newest lines are kept. A negative value is an error. |
 | `--step-logs` | `failed` | Which per-step logs to collect under `logs/steps/`: `failed` (only `error`/`failed` steps — the actual failures, not downstream `aborted`/`cancelled` steps), `all` (every step), or `none` (skip). |
-| `--utc` | `false` | Render `SUMMARY.md` timestamps in UTC. By default they use the local time zone of the machine running the CLI, taken from `TZ` or `/etc/localtime`; when the CLI can't name the zone (on Windows, or when `TZ` holds a POSIX rule such as `AEST-10AEDT`) the summary uses UTC. Log files always use UTC. |
+| `--utc` | `false` | Render `SUMMARY.md` timestamps in UTC. By default they use the local time zone of the machine running the CLI, taken from `TZ` or `/etc/localtime`; when the CLI can't name the zone (on Windows, when `TZ` holds a POSIX rule such as `AEST-10AEDT`, or when `/etc/localtime` is a copy rather than a link) the summary uses UTC. Log files always use UTC. |
 
 Generating a bundle for a large change can take a while. The command prints
-`Generating bundle on server…` to **stderr** when it starts, and the final line reports the total
-(`... (took 4.3s)`). stdout stays clean for `--summary-only`. With `-q`/`--quiet` both lines are
-suppressed and the command prints only the written file's path (useful for scripting); with
+`Generating bundle on server…` to **stderr** when it starts, and reports the elapsed time when it
+finishes (`Support bundle written to <file> (took 4.3s)`, or `Done in 4.3s` when the summary goes to
+stdout). If any piece could not be collected or was skipped, a further stderr line says how many and
+points at `manifest.json` / `SUMMARY.md`. stdout stays clean for `--summary-only`. With `-q`/`--quiet`
+all of these lines are suppressed and the command prints only the written file's path (useful for scripting); with
 `--summary-only` and no `--out-file` it prints only the summary.
 
 If the server takes longer than the gateway in front of it allows, the command fails with
-`the server took too long to generate the bundle`. Collect less — `--step-logs none`, or a
-non-zero `--log-limit` — and try again.
+`the server took too long to generate the bundle (504 from the gateway); try again with
+--step-logs none or a lower --log-limit`. Collect less — `--step-logs none`, or a lower (non-zero)
+`--log-limit` — and try again.
 
 ### Older servers
 
@@ -3502,12 +3574,12 @@ change when you choose a different file name with `--out-file`.
     │   ├── change.log        # the whole change's log, every step included
     │   └── steps/            # per-step logs, e.g. 2-run-error.log (failed step(s) by default)
     ├── info.json
-    ├── events/              # per node level: asset.json, environment.json, project.json (last 10 each)
+    ├── events/              # change.json (the change's own events), plus asset.json, environment.json, project.json (last 10 each)
     ├── properties/          # effective.json, initial.json, final.json, override.json, project.json, environment.json, asset.json
     ├── settings/            # override.json, project.json, environment.json, asset.json
     ├── template/            # template.json, template_version.json
     ├── mintmodel/           # mintmodel.json + mintmodel.json.erb (mintmodel changes only)
-    └── manifest.json        # what was/wasn't collected, CLI and server versions, timestamp
+    └── manifest.json        # what was/wasn't collected, client and server versions, timestamp
 ```
 
 ---
@@ -3660,7 +3732,9 @@ Each command prints a table (SOURCE, RESULT, FILENAME) by default. Use `-o json`
 
 `opschain admin` works with state that spans every node — what the server is busy
 with, how loaded its worker pools are, and the Kubernetes deployments and pods it
-runs on. These commands require an administrator account.
+runs on. Access is granted by authorisation rules on the `/admin` paths (a superuser has it
+already); the sections below name the extra permissions some commands need, and deleting a pod
+needs a superuser.
 
 ### 20.1 What the server is doing
 
@@ -3693,15 +3767,15 @@ streaming from it. `opschain admin clusters` shows where each one stands:
 
 ```bash
 opschain admin clusters
-opschain admin clusters -o json    # adds the API start time
+opschain admin clusters -o json    # adds API start time, cordon details, work counts
 opschain admin clusters -q         # cluster names only
 ```
 
 ```text
-NAME        ROLE       REPLICATION   LAG    CONSUMING WORK   LAST WORKER SEEN
-melbourne   primary    primary       -      yes              2026-09-09 11:42:03
-sydney      replica    streaming     0.4s   no               2026-09-09 11:41:58
-perth       replica    lagging       94s    no               2026-09-09 11:30:12
+NAME        ROLE       REPLICATION   LAG    CONSUMING WORK   CORDONED   IN PROGRESS   LAST WORKER SEEN
+melbourne   primary    primary       -      yes              no         2 changes     2026-09-09 11:42:03
+sydney      replica    streaming     0.4s   no               no         -             2026-09-09 11:41:58
+perth       replica    lagging       94s    no               no         -             2026-09-09 11:30:12
 ```
 
 REPLICATION is one of `primary`, `streaming`, `lagging`, `disconnected` or `lost`. LAG is
@@ -3834,7 +3908,7 @@ which drops every line sharing that timestamp.
 | `--container` | The pod's first container | Container to read the log of |
 | `--limit` / `-l` | 1000 | Maximum number of log lines to return |
 | `--since` | — | Only return lines after this log line id |
-| `--out-file` | — | Write the entire pod log to this file as plain text (`-` for stdout; a directory gets `<pod>_<container>.log`). Can't be combined with `--limit` or `--since` |
+| `--out-file` | — | Write the entire pod log to this file as plain text (`-` for stdout; a directory gets `<pod>.log`, or `<pod>_<container>.log` with `--container`). Can't be combined with `--limit` or `--since` |
 | `--utc` | Local timezone | Display timestamps in UTC |
 
 Reading pod logs needs the `readable` permission on the `/admin/pods/logs`
@@ -3912,6 +3986,21 @@ DRAINED turns to `yes` when all three counts reach zero; it is then safe to stop
 With `on (superusers exempt)`, superusers can still start work while maintenance mode is on, so
 a drain can be undone by one of them starting a change.
 
+### 20.7 Licence
+
+`licence` (alias `license`) shows and replaces the system licence.
+
+```bash
+# Issuer, version, customer identifier and validity period
+opschain licence get
+
+# Install a new licence file, for example on renewal
+opschain licence upload --file ./opschain.licence
+```
+
+`get` fails if the server reports no licence. `upload` replaces the current licence and prints the
+new one; use `-o json` or `-o yaml` for the full record.
+
 ---
 
 ## 21. Converged properties and settings
@@ -3987,7 +4076,8 @@ opschain assets converged-properties myasset -P myproject -E dev \
   --converge-date 2026-04-01T00:00:00+00:00 -o yaml
 ```
 
-The date is ISO 8601. An unparseable value returns `API error (400): Bad request`. The flag is on
+The date is ISO 8601. An unparseable value fails with a 400 that names it:
+`Unable to converge properties for asset "myasset", the converge_date query parameter "<value>" could not be parsed`. The flag is on
 `converged-properties` only: settings have no dated history, so `converged-settings` always shows
 the current values.
 
@@ -4031,7 +4121,7 @@ Both flags are on `converged-properties` only; settings have no layers. `--show-
 | `--show-layers` | — | `converged-properties` only. List the layers that fed the merge and whether each was included |
 | `--exclude-layer` | — | `converged-properties` only. Leave a layer out of the merge, as a preview (repeatable) |
 | `--project` / `-P` | — | Project code. Not applicable to `projects` |
-| `--environment` / `-E` | — | Environment code, for an environment-scoped asset or agent. Not applicable to `projects` or `environments` |
+| `--environment` / `-E` | — | Environment code, for an environment-scoped asset. Assets only |
 | `--code` / `--name` / `--id` | — | Force the lookup to a code, name, or UUID |
 
 To see the properties set *at* one level rather than the merged result, use that resource's
@@ -4063,7 +4153,7 @@ directory, `/opt/opschain`, so `certs/cert.pem` is written to `/opt/opschain/cer
 absolute path is written where it says provided the runner's user can write there. The runner runs
 as a non-root user, so an absolute path under a root-owned location such as `/etc` uploads fine and
 then fails the action with a permission error — `Failed to write "/etc/ssl/ca.pem" due to: Permission
-denied` when the directory exists, or a bare `Errno::EACCES` when the runner cannot create it. The runner
+denied @ rb_sysopen - /etc/ssl/ca.pem` when the directory exists, or a bare `Errno::EACCES` when the runner cannot create it. The runner
 rewrites every file property at the start of every action, so that failure repeats on every change
 at the node until you remove the file property. Prefer a relative path.
 
@@ -4129,7 +4219,7 @@ To store a file in the vault on its own, with no file property, use
 | `--secret-key` | No | — | Key to store the content under. Requires `--secret-path` |
 | `--replace-secret` | No | `false` | Overwrite an existing vault value |
 | `--project` / `-P` | Varies | — | Project code. Not applicable to `projects` |
-| `--environment` / `-E` | No | — | Environment code, for an environment-scoped asset or agent |
+| `--environment` / `-E` | No | — | Environment code, for an environment-scoped asset. Assets only |
 | `--code` / `--name` / `--id` | No | — | Force the lookup to a code, name, or UUID |
 
 `-o json` and `-o yaml` print the updated properties resource; `-q` prints its UUID.
@@ -4165,8 +4255,8 @@ opschain artefacts upload -P myproject --code licence_key --file ./licence.key -
 Pick the node with `-P`, adding `-E` and/or `-A`. `-A` without `-E` is a project-level asset.
 Codes use lowercase letters, numbers and underscores, up to 100 characters.
 
-The `artefact.max_file_size` setting (at most 2Gi) limits the file size, and a larger file is refused
-before anything is stored. The CLI reads the whole file into memory to send it.
+The `artefact.max_file_size` setting (default 500Mi) limits the file size, and a larger file is refused
+before anything is stored. It cannot exceed `artefact.hard_max_file_size` (default 2Gi). The CLI reads the whole file into memory to send it.
 
 **Upload flags:**
 
