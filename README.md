@@ -131,11 +131,11 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [Store a file](#store-a-file)
     - [Keep the content in the secret vault](#keep-the-content-in-the-secret-vault)
     - [Flags](#flags-2)
-23. [Artefacts](#23-artefacts)
+23. [Artifacts](#23-artifacts)
     - [Upload a file](#upload-a-file)
-    - [List and inspect artefacts](#list-and-inspect-artefacts)
+    - [List and inspect artifacts](#list-and-inspect-artifacts)
     - [Download a file](#download-a-file)
-    - [Purged artefacts](#purged-artefacts)
+    - [Purged artifacts](#purged-artifacts)
     - [See what a change loaded](#see-what-a-change-loaded)
 24. [Remote runner targets](#24-remote-runner-targets)
     - [Register and manage targets](#register-and-manage-targets)
@@ -1425,7 +1425,8 @@ instead of loading every line before printing.
 
 ### 10.6 Kubernetes events
 
-View Kubernetes events for a running agent (the agent must be in `running` state):
+View Kubernetes events for an agent. An agent that is not deployed in Kubernetes (stopped, or its
+image not yet built) has no events: the list is empty and a note on stderr says why.
 
 ```bash
 # Last 50 events (default), newest first
@@ -2772,6 +2773,10 @@ opschain scheduled-activities update <id> --notify-email ops@example.com --notif
 opschain scheduled-activities update <id> --schedule "0 3 * * *"
 opschain scheduled-activities update <id> --enabled=false    # disable
 
+# Move a one-off to a new time; the ID stays the same
+opschain scheduled-activities update <id> \
+  --run-at "2026-11-28 23:00:00" --timezone Australia/Sydney
+
 # Create an activity that starts out disabled
 opschain scheduled-activities create \
   --type scheduled_change \
@@ -2850,6 +2855,14 @@ blank for an activity on an environment or project.
 > **`--git-remote` and `--git-rev` are refused for an asset (`-A`).** The asset's template
 > supplies the source, so `create` stops with `--git-remote and --git-rev are not valid for an
 > asset (-A); the asset's template supplies the source`.
+>
+> **Move a one-off with `update --run-at`.** The activity keeps its ID, and the new time
+> is read in `--timezone` (or your local timezone), as on `create`. OpsChain queues the run
+> at the new time itself; you need `--enabled=true` as well only if the activity was
+> disabled. The time must be in the future. `--run-at` replaces the cron schedule, so it
+> also clears `--end-at`, `--max-runs` and repeat, and turns a recurring activity into a
+> one-off. `--schedule` goes the other way and clears the run-at time. You cannot pass
+> both: `update` stops with `cannot specify both --schedule and --run-at`.
 >
 > **You cannot move a scheduled activity to another node.** `update` ignores
 > `-P`, `-E` and `-A` (it accepts them but they have no effect), and the API rejects the node attributes outright.
@@ -3841,22 +3854,41 @@ opschain admin deployments restart opschain-api-worker
 opschain admin deployments scale opschain-api-worker --replicas 5
 
 # Stop a deployment processing work
-opschain admin deployments scale opschain-mintmodel-steps-api --replicas 0
+opschain admin deployments scale opschain-api-worker --replicas 0
+
+# See the MintModel API's current resources, concurrency and transformer heap
+opschain admin deployments list -o yaml
+
+# Give MintModel renders more memory, or run more of them at once
+opschain admin deployments resources opschain-mintmodel-api --memory-limit 8Gi
+opschain admin deployments resources opschain-mintmodel-api --concurrency 3 --memory-limit 9Gi
 ```
 
 `admin deployments` (aliases `deployment`, `deploys`) is the command group; `list`
-shows NAME, REPLICAS, READY, AVAILABLE, MAX, and RESTARTED AT. REPLICAS is the count the deployment is configured to run;
+shows NAME, REPLICAS, READY, AVAILABLE, MAX, MEMORY and RESTARTED AT. REPLICAS is the count the deployment is configured to run;
 READY and AVAILABLE are how many pods have reached those states, and show `-` when
 Kubernetes reports none. MAX is the replica ceiling — a deployment showing MAX 1
-cannot be scaled.
+cannot be scaled. MEMORY is the main container's memory request / limit, read from
+the running deployment.
 
 `restart` performs a rolling restart, replacing each pod without changing the
 deployment's configuration. `scale` sets the replica count, which must be between 0
-and that deployment's MAX. Only the worker deployments can be scaled; scaling any
-other one is rejected with `Deployment '<name>' cannot be scaled`, naming the ones
-that can.
+and that deployment's MAX. Only the worker and MintModel API deployments can be scaled;
+scaling any other one is rejected with `Deployment '<name>' cannot be scaled`, naming
+the ones that can. Scaling the MintModel API changes how many MintModels the site
+renders at once — its replicas multiplied by its concurrency — straight away.
 
-Kubernetes applies both asynchronously. The command returns once the change is
+`resources` changes the MintModel API's memory and CPU requests and limits
+(`--memory-request`, `--memory-limit`, `--cpu-request`, `--cpu-limit`), the renders
+each replica runs at once (`--concurrency`) and the heap of each transformer
+(`--transformer-heap`). Only what you pass changes; pass a request or limit as `""`
+to remove it. A memory limit too small for the concurrency and heap is rejected with
+the size needed — `list -o yaml` reports the current minimum as
+`meta.minimum_memory_limit`. The concurrency can't be set below the spare
+transformers each replica keeps, which are set by `mintModelApi.transformer.spares`
+in `values.yaml`.
+
+Kubernetes applies all three asynchronously. The command returns once the change is
 accepted, not when the rollout finishes — run `admin deployments list` to watch it.
 Two consequences worth planning around:
 
@@ -3865,11 +3897,13 @@ Two consequences worth planning around:
   until they finish their in-progress jobs, for up to the deployment's termination
   grace period — 1 hour by default.
 
-A replica count set here isn't written back to the Helm values, so the next Helm
-upgrade returns the deployment to its configured count.
+A replica count or resource change made here applies to this site only, and isn't
+written back to the Helm values, so a Helm upgrade that changes the same values
+returns the deployment to them.
 
-`restart` and `scale` need the `updatable` permission on the
-`/admin/deployments/restart` and `/admin/deployments/scale` authorisation paths. A
+`restart`, `scale` and `resources` need the `updatable` permission on the
+`/admin/deployments/restart`, `/admin/deployments/scale` and
+`/admin/deployments/resources` authorisation paths. A
 rule on a parent path such as `/admin` grants it; a rule on the specific path
 overrides that parent rule.
 
@@ -4244,72 +4278,72 @@ Properties cannot be written while a change is running at that node — the comm
 
 ---
 
-## 23. Artefacts
+## 23. Artifacts
 
-An artefact is a versioned file stored against a project, environment or asset — a build, a
+An artifact is a versioned file stored against a project, environment or asset — a build, a
 licence key, an installer. Each upload with the same code at the same node adds a new version.
 A change loads the newest version of a code and records the load, so you can later see which
 file it used.
 
-`artefact`, `artifacts` and `artifact` are aliases for `artefacts`.
+`artifact`, `artefacts` and `artefact` are aliases for `artifacts`.
 
 ### Upload a file
 
 ```bash
 # An environment-scoped asset
-opschain artefacts upload -P myproject -E dev -A myasset --code app_war --file ./app.war
+opschain artifacts upload -P myproject -E dev -A myasset --code app_war --file ./app.war
 
 # Label and describe the version
-opschain artefacts upload -P myproject -A myasset --code app_war --file ./app.war \
+opschain artifacts upload -P myproject -A myasset --code app_war --file ./app.war \
   --label release --label 2026.10 --description "October release build"
 
-# At the project; print only the new artefact's ID
-opschain artefacts upload -P myproject --code licence_key --file ./licence.key -q
+# At the project; print only the new artifact's ID
+opschain artifacts upload -P myproject --code licence_key --file ./licence.key -q
 ```
 
 Pick the node with `-P`, adding `-E` and/or `-A`. `-A` without `-E` is a project-level asset.
 Codes use lowercase letters, numbers and underscores, up to 100 characters.
 
-The `artefact.max_file_size` setting (default 500Mi) limits the file size, and a larger file is refused
-before anything is stored. It cannot exceed `artefact.hard_max_file_size` (default 2Gi). The CLI reads the whole file into memory to send it.
+The `artifact.max_file_size` setting (default 500Mi; `artefact.max_file_size` on servers from before the rename) limits the file size, and a larger file is refused
+before anything is stored. It cannot exceed `artifact.hard_max_file_size` (default 2Gi). The CLI reads the whole file into memory to send it.
 
 **Upload flags:**
 
 | Flag | Required | Description |
 |---|---|---|
 | `--file` | Yes | Local file to upload |
-| `--code` | Yes | Artefact code |
+| `--code` | Yes | Artifact code |
 | `--project` / `-P` | Yes | Project code |
 | `--environment` / `-E` | — | Environment code |
 | `--asset` / `-A` | — | Asset code |
 | `--label` | — | Label for this version (repeatable or comma-separated) |
 | `--description` | — | Description of this version, up to 1000 characters |
 
-### List and inspect artefacts
+### List and inspect artifacts
 
 ```bash
 # Every version stored at an asset, newest first
-opschain artefacts list -P myproject -E dev -A myasset
+opschain artifacts list -P myproject -E dev -A myasset
 
 # The newest version of each code, with a count of its versions
-opschain artefacts list -P myproject -E dev -A myasset --latest
+opschain artifacts list -P myproject -E dev -A myasset --latest
 
 # Every version of one code carrying a label
-opschain artefacts list -P myproject -E dev -A myasset --code app_war --label release
+opschain artifacts list -P myproject -E dev -A myasset --code app_war --label release
 
 # What a change or a step created
-opschain artefacts list --change $CHANGE_ID
-opschain artefacts list --step $STEP_ID
+opschain artifacts list --change $CHANGE_ID
+opschain artifacts list --step $STEP_ID
 
 # One version in full
-opschain artefacts get $ARTEFACT_ID -o yaml
+opschain artifacts get $ARTIFACT_ID -o yaml
 ```
 
-A node's list holds only its own artefacts, not those of the nodes beneath it. The table shows
+A node's list holds only its own artifacts, not those of the nodes beneath it. The table shows
 ID, CODE, FILENAME, SIZE, LABELS, VERSIONS, CREATED BY and CREATED AT. VERSIONS is filled in
 under `--latest`.
 
-The server returns at most 100 artefacts. Raise that with `--limit`; when the list is cut short,
+The server returns at most 100 artifacts. Raise that with `--limit`; when the list is cut short,
 a note on stderr says so.
 
 **List flags:**
@@ -4317,8 +4351,8 @@ a note on stderr says so.
 | Flag | Description |
 |---|---|
 | `--project` / `-P`, `--environment` / `-E`, `--asset` / `-A` | The node to list |
-| `--change` | List the artefacts this change created, instead of a node's |
-| `--step` | List the artefacts this step created, instead of a node's |
+| `--change` | List the artifacts this change created, instead of a node's |
+| `--step` | List the artifacts this step created, instead of a node's |
 | `--code` | Only this code |
 | `--label` | Only versions carrying this label (repeatable or comma-separated; a version must carry every label given). With `--latest`, the newest version that carries them |
 | `--latest` | One row per code: its newest version |
@@ -4329,17 +4363,17 @@ a note on stderr says so.
 
 ```bash
 # By ID, saved under its own file name in the current directory
-opschain artefacts download $ARTEFACT_ID
+opschain artifacts download $ARTIFACT_ID
 
 # The newest "app_war" version at an asset, into a directory
-opschain artefacts download -P myproject -E dev -A myasset --code app_war --out-file ./build/
+opschain artifacts download -P myproject -E dev -A myasset --code app_war --out-file ./build/
 
 # The newest version labelled "release", to a chosen file
-opschain artefacts download -P myproject -A myasset --code app_war --label release \
+opschain artifacts download -P myproject -A myasset --code app_war --label release \
   --out-file /tmp/app.war
 
 # To stdout
-opschain artefacts download $ARTEFACT_ID --out-file - | sha256sum
+opschain artifacts download $ARTIFACT_ID --out-file - | sha256sum
 ```
 
 With `--code`, the CLI downloads the newest version of that code at the node. Add `--label`
@@ -4347,9 +4381,9 @@ With `--code`, the CLI downloads the newest version of that code at the node. Ad
 
 `--out-file` takes a file name, a directory, or `-` for stdout. An existing file is replaced
 only once the whole file has arrived, so a failed download never leaves a partial file. On
-success the CLI prints `Artefact written to <path>`; with `-`, it prints nothing but the file.
+success the CLI prints `Artifact written to <path>`; with `-`, it prints nothing but the file.
 
-### Purged artefacts
+### Purged artifacts
 
 A data cleanup can purge old versions. The record stays, with `purged` in the SIZE column, but
 its file is gone and cannot be downloaded — the server answers 410. `download --code` skips purged versions, and uploads
@@ -4358,12 +4392,12 @@ that never finished, when it picks the newest.
 ### See what a change loaded
 
 ```bash
-opschain artefacts loads --change $CHANGE_ID
-opschain artefacts loads --step $STEP_ID
-opschain artefacts loads --change $CHANGE_ID -q   # artefact IDs only
+opschain artifacts loads --change $CHANGE_ID
+opschain artifacts loads --step $STEP_ID
+opschain artifacts loads --change $CHANGE_ID -q   # artifact IDs only
 ```
 
-Each row is one load: ARTEFACT ID, CODE, FILENAME, LABELS, STEP ID and LOADED AT, newest first.
+Each row is one load: ARTIFACT ID, CODE, FILENAME, LABELS, STEP ID and LOADED AT, newest first.
 Use it to find exactly which version of a file a change deployed. The server returns at most 100
 loads; `--limit` raises that.
 
