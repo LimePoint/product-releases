@@ -441,7 +441,7 @@ OPSCHAIN_USERNAME=alice OPSCHAIN_PASSWORD=s3cr3t opschain tokens login
 opschain tokens login --api-url https://staging.opschain.example.com
 ```
 
-After a successful login, the token is written to the active profile's `token` field. With `-q`, `tokens login` prints only the new token's ID. You can confirm which auth method is being used with `--debug` (see §26).
+After a successful login, the token is written to the active profile's `token` field. If signing in could not give you secret vault access (for example, because your secret vault session has ended), the server's warning is printed to stderr as `Warning: <message>`, and the login still succeeds. With `-q`, `tokens login` prints only the new token's ID. You can confirm which auth method is being used with `--debug` (see §26).
 
 > **Token expiry:** Access tokens are short-lived (typically a few hours). Re-run `opschain tokens login` when a token expires — you will get a 401 response if it has.
 
@@ -524,8 +524,9 @@ opschain tokens create-api-key --description "deploy bot" --expiry-date 2026-12-
   --username deploy-bot --password s3cr3t
 ```
 
-A key created with `--username` and `--password` gets secret vault access: it decrypts and stores
-secret vault values using the secret vault credentials that user has registered, and an LDAP user of
+A key created with a password gets secret vault access, whether the password comes from
+`--username` and `--password` or from a profile holding a username and password rather than a
+token. The key decrypts and stores secret vault values using the secret vault credentials that user has registered, and an LDAP user of
 the bundled secret vault also gets the key its own vault login. A key created with a token has no
 secret vault access. Any warning about the key's vault access - for example, that the user has no
 secret vault credential registered - is printed to stderr. `-o json` and `-o yaml` show the key's
@@ -1032,7 +1033,8 @@ from the target, and if any node fails validation nothing is written at all.
 
 `merge` deep-merges the source's document over the target's. `replace` overwrites the target's
 document with the source's. `--existing`, `--asset-properties` and `--asset-settings` need
-`--assets`.
+`--assets`, which works only for an environment in an enterprise project; otherwise the clone fails
+with `assets can only be supplied when cloning an environment of an enterprise project`.
 
 The output has one row per node, then a summary:
 
@@ -1525,6 +1527,9 @@ With `--wait`, the CLI polls every 5 seconds and prints the current status to st
 opschain agents status myagent -P myproject
 ```
 
+If the agent has failed, the table is followed by `Note: the agent failed: <reason>` on stderr.
+`-o json` and `-o yaml` carry the reason as `failure_reason`.
+
 ### 10.5 Viewing agent logs
 
 ```bash
@@ -1549,7 +1554,7 @@ instead of loading every line before printing.
 ### 10.6 Kubernetes events
 
 View Kubernetes events for an agent. An agent that is not deployed in Kubernetes (stopped, or its
-image not yet built) has no events: the list is empty and a note on stderr says why.
+image not yet built) has no events: the list is empty and a note on stderr says why (`-q` suppresses it).
 
 ```bash
 # Last 50 events (default), newest first
@@ -3912,8 +3917,8 @@ Each command prints a table (SOURCE, RESULT, FILENAME) by default. Use `-o json`
 `opschain admin` works with state that spans every node — what the server is busy
 with, how loaded its worker pools are, and the Kubernetes deployments and pods it
 runs on. Access is granted by authorisation rules on the `/admin` paths (a superuser has it
-already); the sections below name the extra permissions some commands need, and deleting a pod
-needs a superuser.
+already); the sections below name the extra permissions some commands need. Deleting a pod and every
+`admin secret-vault` command need a superuser.
 
 ### 20.1 What the server is doing
 
@@ -4037,7 +4042,8 @@ to remove it. A memory limit too small for the concurrency and heap is rejected 
 the size needed — `list -o yaml` reports the current minimum as
 `meta.minimum_memory_limit`. The concurrency can't be set below the spare
 transformers each replica keeps, which are set by `mintModelApi.transformer.spares`
-in `values.yaml`.
+in `values.yaml`. Only the MintModel API can be resized; any other deployment is rejected with
+`Deployment '<name>' cannot be resized`, naming the ones that can.
 
 Kubernetes applies all three asynchronously. The command returns once the change is
 accepted, not when the rollout finishes — run `admin deployments list` to watch it.
@@ -4238,6 +4244,8 @@ opschain admin secret-vault policies delete team-a-readers
 opschain admin secret-vault ldap-users list
 opschain admin secret-vault ldap-users get jsmith
 opschain admin secret-vault ldap-users update jsmith --add team-a-readers
+opschain admin secret-vault ldap-groups list
+opschain admin secret-vault ldap-groups get team-a
 opschain admin secret-vault ldap-groups update team-a --policies team-a-readers,shared-readers
 opschain admin secret-vault ldap-groups update team-a --clear
 ```
@@ -4420,7 +4428,8 @@ full effective settings, including the ones that come unchanged from the global 
 opschain environments converged-settings dev -P myproject --include-global --show-sources
 ```
 
-Secured, sensitive and encrypted values are left out even with `--include-global`. Servers before
+`--include-global` never adds a secured, sensitive or encrypted global value, or the bundled secret
+vault's address, and only adds documented settings. Servers before
 the 2026-10-30 release ignore the flag.
 
 ### See the merged values
@@ -4961,15 +4970,15 @@ while `list` shows one there you cannot register another at `/`.
 ### Passing the token
 
 The token is a secret. Pass it with `--token-file <file>`, or `--token-file -` to read it from
-stdin. Surrounding whitespace and the trailing newline are removed. `--token <value>` also works,
+stdin. Surrounding whitespace and the trailing newline are removed. `--vault-token <value>` also works,
 but the token then sits in your shell history and in the process list.
 
 OpsChain checks the token with the vault for `--node-path` before storing it. It refuses:
 
 - a token the vault rejects (`Token was not accepted by …`)
 - a node path that does not exist (`Node path must be /, or the path of an existing node, template or template version`)
-- a credential for a node that uses the bundled vault, which your sign-in already gives you
-  access to (`… uses the bundled secret vault, which your sign-in already gives you access to, so it needs no credential`)
+- a credential for a node that uses the bundled vault, when your sign-in already gives you
+  access to it (`… uses the bundled secret vault, which your sign-in already gives you access to, so it needs no credential`)
 - a second credential at the same node path (`Node path must be unique`)
 
 Deleting a credential stops OpsChain using the token. The token stays valid in the vault until you
@@ -4982,9 +4991,9 @@ revoke it there.
 | `--node-path` | No | `/` | Where the credential applies; must start with `/` |
 | `--target-system` | No | `secret_vault` | The external system; `secret_vault` is the only one |
 | `--token-file` | One of these | — | File holding the token; `-` reads stdin |
-| `--token` | One of these | — | The token itself; visible in shell history |
+| `--vault-token` | One of these | — | The token itself; visible in shell history |
 
-**Update flags:** `--token-file` or `--token`, as for `create`. Only the token can change.
+**Update flags:** `--token-file` or `--vault-token`, as for `create`. Only the token can change.
 
 `create -q` and `update -q` print the credential ID; `delete -q` prints the deleted ID.
 
