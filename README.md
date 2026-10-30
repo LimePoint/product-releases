@@ -32,6 +32,7 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
 7. [Environments](#7-environments)
    - [Commands](#commands-2)
    - [Environment properties and settings](#environment-properties-and-settings)
+   - [Clone an environment](#clone-an-environment)
 8. [Asset Templates](#8-asset-templates)
    - [Commands](#commands-3)
    - [Manage template versions](#manage-template-versions)
@@ -41,6 +42,7 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
    - [Commands](#commands-4)
    - [Viewing an action's steps](#viewing-an-actions-steps)
    - [Asset properties and settings](#asset-properties-and-settings)
+   - [Clone an asset](#clone-an-asset)
    - [Generate Actions](#generate-actions)
    - [MintModels](#mintmodels)
 10. [Agents](#10-agents)
@@ -122,11 +124,13 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [20.5 Deleting a stuck pod](#205-deleting-a-stuck-pod)
     - [20.6 Drain before an upgrade](#206-drain-before-an-upgrade)
     - [20.7 Licence](#207-licence)
+    - [20.8 Secret vault policies and LDAP access](#208-secret-vault-policies-and-ldap-access)
 21. [Converged properties and settings](#21-converged-properties-and-settings)
     - [See the merged values](#see-the-merged-values)
     - [Find out where a value came from](#find-out-where-a-value-came-from)
     - [Look back in time](#look-back-in-time)
     - [Preview the merge without a layer](#preview-the-merge-without-a-layer)
+    - [Converge a template or template version](#converge-a-template-or-template-version)
 22. [File properties](#22-file-properties)
     - [Store a file](#store-a-file)
     - [Keep the content in the secret vault](#keep-the-content-in-the-secret-vault)
@@ -143,7 +147,11 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [The bearer token](#the-bearer-token)
     - [Maintenance mode for a target](#maintenance-mode-for-a-target)
     - [Daemon settings](#daemon-settings)
-25. [Troubleshooting](#25-troubleshooting)
+25. [Your secret vault credentials](#25-your-secret-vault-credentials)
+    - [Manage your credentials](#manage-your-credentials)
+    - [Where a credential applies](#where-a-credential-applies)
+    - [Passing the token](#passing-the-token)
+26. [Troubleshooting](#26-troubleshooting)
     - [`--debug` — inspect HTTP traffic](#--debug--inspect-http-traffic)
     - [`--stacktrace` — Go stack trace on error](#--stacktrace--go-stack-trace-on-error)
     - [`--insecure` — self-signed certificates](#--insecure--self-signed-certificates)
@@ -433,7 +441,7 @@ OPSCHAIN_USERNAME=alice OPSCHAIN_PASSWORD=s3cr3t opschain tokens login
 opschain tokens login --api-url https://staging.opschain.example.com
 ```
 
-After a successful login, the token is written to the active profile's `token` field. With `-q`, `tokens login` prints only the new token's ID. You can confirm which auth method is being used with `--debug` (see §25).
+After a successful login, the token is written to the active profile's `token` field. With `-q`, `tokens login` prints only the new token's ID. You can confirm which auth method is being used with `--debug` (see §26).
 
 > **Token expiry:** Access tokens are short-lived (typically a few hours). Re-run `opschain tokens login` when a token expires — you will get a 401 response if it has.
 
@@ -515,6 +523,13 @@ instead, even when the profile holds a token:
 opschain tokens create-api-key --description "deploy bot" --expiry-date 2026-12-31 \
   --username deploy-bot --password s3cr3t
 ```
+
+A key created with `--username` and `--password` gets secret vault access: it decrypts and stores
+secret vault values using the secret vault credentials that user has registered, and an LDAP user of
+the bundled secret vault also gets the key its own vault login. A key created with a token has no
+secret vault access. Any warning about the key's vault access - for example, that the user has no
+secret vault credential registered - is printed to stderr. `-o json` and `-o yaml` show the key's
+`registered_vault_credentials` and `secret_vault_access` attributes, here and in `tokens list`.
 
 #### Credential resolution order
 
@@ -975,6 +990,78 @@ These show what is set *on* the environment. For the merged result — repositor
 included — use `opschain environments converged-properties dev -P myproject` or
 `converged-settings`; see [§21](#21-converged-properties-and-settings).
 
+### Clone an environment
+
+`environments clone` copies an environment's properties, settings and assets into a new or
+existing environment in the same project. When the target doesn't exist, the clone creates it and
+`--name` is required.
+
+```bash
+# Preview a new uat environment built from dev, with every asset
+opschain environments clone dev uat -P myproject --name "UAT" \
+  --properties replace --settings replace \
+  --assets '*' --asset-properties replace --asset-settings replace --dry-run
+
+# Run the same clone
+opschain environments clone dev uat -P myproject --name "UAT" \
+  --properties replace --settings replace \
+  --assets '*' --asset-properties replace --asset-settings replace
+
+# Merge dev's properties into test, and add two assets, updating them if test already has them
+opschain environments clone dev test -P myproject --properties merge \
+  --assets web,db --existing update --asset-properties merge
+```
+
+Nothing is copied unless you ask for it. With no `--properties` or `--settings`, the target's
+documents are left alone, and with no `--assets`, no assets are cloned. Nothing is ever removed
+from the target, and if any node fails validation nothing is written at all.
+
+**Clone flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--name` | — | Name for the target. Required when the clone creates it; ignored otherwise |
+| `--description` | — | Description for the target when the clone creates it |
+| `--properties` | `skip` | How to clone the environment's properties: `skip`, `merge` or `replace` |
+| `--settings` | `skip` | How to clone the environment's settings: `skip`, `merge` or `replace` |
+| `--assets` | — | Asset codes to clone with the environment, repeatable or comma-separated, or `'*'` for every unarchived asset |
+| `--existing` | `skip` | What to do with an asset the target already has: `skip` it, `update` it, or `fail` the whole clone |
+| `--asset-properties` | `skip` | How to clone each asset's properties: `skip`, `merge` or `replace` |
+| `--asset-settings` | `skip` | How to clone each asset's settings: `skip`, `merge` or `replace` |
+| `--dry-run` | `false` | Show the report without writing anything |
+
+`merge` deep-merges the source's document over the target's. `replace` overwrites the target's
+document with the source's. `--existing`, `--asset-properties` and `--asset-settings` need
+`--assets`.
+
+The output has one row per node, then a summary:
+
+```text
+PATH                                             TYPE         RESULT   DOCUMENTS             REASON
+/projects/myproject/environments/uat             environment  created  properties, settings  -
+/projects/myproject/environments/uat/assets/web  asset        created  properties, settings  -
+
+Dry run of /projects/myproject/environments/dev to /projects/myproject/environments/uat: would create 2, update 0, skip 0. Nothing was written.
+```
+
+An asset is skipped, with the reason in the REASON column, when the target already has an asset
+with that code (and `--existing` is `skip`), has an archived asset with that code, has another
+asset with the same name, or when the asset's template version can't be assigned there. Use
+`-o json` or `-o yaml` for the full report, or `-q` to print only the node paths.
+
+Secrets in the cloned documents are copied as they are. Each one is listed on stderr by key path,
+never by value, so you can check that it resolves at the target:
+
+```text
+Warning: /projects/myproject/environments/uat properties db.password: secret vault reference cloned as it is
+```
+
+Actions for created assets are generated in the background after the clone returns.
+
+You need read access to everything the clone copies from and update access to everything it
+writes to. Without it the clone fails with `You are not authorised to ...` and nothing is
+written.
+
 ---
 
 ## 8. Asset Templates
@@ -1248,6 +1335,42 @@ These show what is set *on* the asset. For the values an action will actually ru
 template, project, environment and asset layers merged — use
 `opschain assets converged-properties myasset -P myproject -E dev` or `converged-settings`; see
 [§21](#21-converged-properties-and-settings).
+
+### Clone an asset
+
+`assets clone` copies an asset's properties and settings into a new or existing asset in the same
+project. The source and target can be in different environments, or at the project level.
+
+```bash
+# Preview copying dev's web asset into uat, keeping the code
+opschain assets clone web -P myproject -E dev --target-environment uat \
+  --name "Web" --properties replace --settings replace --dry-run
+
+# Clone a project-level asset into an environment
+opschain assets clone web -P myproject --target-environment dev \
+  --name "Web" --properties replace --settings replace
+
+# Merge an asset's properties into another asset in the same environment
+opschain assets clone web web2 -P myproject -E dev --properties merge
+
+# Copy an environment's asset up to the project level
+opschain assets clone web -P myproject -E dev --target-environment "" \
+  --name "Web" --properties replace
+```
+
+`-E` picks the source asset's environment; leave it out for a project-level asset.
+`--target-environment` picks the target's environment. It defaults to the source's, and
+`--target-environment ""` targets the project level. The target code defaults to the source's
+code.
+
+When the target doesn't exist, the clone creates it on the source's template version and `--name`
+is required. Without it the clone fails with
+`target.name is required when nothing exists at target_path`.
+
+`assets clone` takes `--name`, `--description`, `--properties`, `--settings` and `--dry-run`, which
+work as they do for `environments clone` (see [Clone an environment](#clone-an-environment)).
+Nothing is copied unless you ask for it, nothing is removed from the target, and secrets are listed
+on stderr.
 
 ### Generate Actions
 
@@ -2702,6 +2825,7 @@ opschain scheduled-activities list --project myproject -A myasset      # project
 opschain scheduled-activities list --type scheduled_change
 opschain scheduled-activities list --type scheduled_workflow
 opschain scheduled-activities list --enabled true
+opschain scheduled-activities list --label nightly
 
 # Get details of a specific activity
 opschain scheduled-activities get <id>
@@ -2788,6 +2912,8 @@ opschain scheduled-activities update <id> --skip-steps 'steps/to/skip/**'
 opschain scheduled-activities update <id> --auto-continue-wait-steps
 opschain scheduled-activities update <id> --settings-overrides '{"dockerfile": "Dockerfile_custom"}'
 opschain scheduled-activities update <id> --commit-file-pattern 'app/**'
+opschain scheduled-activities update <id> --label nightly,prod
+opschain scheduled-activities update <id> --clear-labels
 
 # Move a scheduled workflow onto another version, or back to floating
 opschain scheduled-activities update <id> --version 4
@@ -2851,6 +2977,13 @@ blank for an activity on an environment or project.
 > knows the type, and stops with `--version is only valid for a scheduled_workflow`.
 >
 > A schedule following the latest version shows `latest` as its version in `get -o json`.
+>
+> **Labels** group activities so you can find them again. `create --label` sets them
+> (repeat the flag or separate labels with commas), `list --label` returns only the
+> activities carrying **every** label you give, and matching is case-sensitive. On
+> `update`, `--label` replaces the stored labels and `--clear-labels` removes them all.
+> Labels are not copied to the changes or workflow runs an activity creates. Servers before
+> the 2026-10-30 release reject them.
 >
 > **`--git-remote` and `--git-rev` are refused for an asset (`-A`).** The asset's template
 > supplies the source, so `create` stops with `--git-remote and --git-rev are not valid for an
@@ -3707,6 +3840,18 @@ opschain secrets resolve -P myproject \
 
 `store`, `store-file`, and `resolve` need the node whose vault configuration is used. Give it directly with `--vault-owner-id` (a node UUID), or name the node by code with `-P/--project` (optionally `-E/--environment` or `-A/--asset`) and the CLI looks up its UUID. `-E` and `-A` require a project. `resolve` is also available as `secrets global`.
 
+`store` and `store-file` can use a template's or template version's vault instead of a node's. Name
+the template with `--template` (name, code or ID, with `-P`) and add `--template-version` for a
+version, or pass the UUID with `--vault-owner-id` and say what it is with `--vault-owner-type`
+(`template` or `template_version`):
+
+```bash
+opschain secrets store -P myproject --template "Application" --template-version v1.0 \
+  --vault-path secret-vault://path/to/key --value "my-secret-value"
+```
+
+`--template` can't be combined with `-E`, `-A` or `--vault-owner-id`. `resolve` always uses a node.
+
 If the server can't complete the request (for example, `resolve` is given an `--expected-value` that doesn't match what is stored), the command prints the server's message as an error and exits with status 1. With `-q`, that message never goes to stdout, so a script capturing the value gets nothing rather than the error text.
 
 `store-file` is the file-based form of `store`: instead of `--value`, it uploads `--file` and stores the file's contents at the path. Binary files are base64-encoded for you, and the filename itself isn't stored.
@@ -3721,6 +3866,9 @@ If the server can't complete the request (for example, `resolve` is given an `--
 | `--project` / `-P` | * | Project code of the node, resolved to its UUID |
 | `--environment` / `-E` | No | Environment code of the node (requires `--project`) |
 | `--asset` / `-A` | No | Asset code of the node (requires `--project`) |
+| `--template` | No | Template name, code or ID whose vault is used (requires `--project`) |
+| `--template-version` | No | Template version whose vault is used (requires `--template`) |
+| `--vault-owner-type` | No | What `--vault-owner-id` identifies: `node` (default), `template` or `template_version` |
 | `--replace` | No | Replace the value if one already exists at the path |
 
 \* Provide either `--vault-owner-id` or `--project`.
@@ -3735,6 +3883,9 @@ If the server can't complete the request (for example, `resolve` is given an `--
 | `--project` / `-P` | * | Project code of the node, resolved to its UUID |
 | `--environment` / `-E` | No | Environment code of the node (requires `--project`) |
 | `--asset` / `-A` | No | Asset code of the node (requires `--project`) |
+| `--template` | No | Template name, code or ID whose vault is used (requires `--project`) |
+| `--template-version` | No | Template version whose vault is used (requires `--template`) |
+| `--vault-owner-type` | No | What `--vault-owner-id` identifies: `node` (default), `template` or `template_version` |
 | `--replace` | No | Replace the value if one already exists at the path |
 
 \* Provide either `--vault-owner-id` or `--project`.
@@ -4050,6 +4201,186 @@ opschain licence upload --file ./opschain.licence
 `get` fails if the server reports no licence. `upload` replaces the current licence and prints the
 new one; use `-o json` or `-o yaml` for the full record.
 
+### 20.8 Secret vault policies and LDAP access
+
+When OpsChain uses the bundled secret vault with LDAP authentication, `admin secret-vault`
+(alias `vault`) manages the vault's ACL policies and which LDAP users and groups hold them.
+Vault administrators cannot write policies in the vault directly — a policy written there could
+grant access to the vault's own configuration — so OpsChain writes them on their behalf and only
+accepts rule paths inside the vault's key value mounts.
+
+Every command requires a superuser account. No authorisation rule grants it. Against a server
+using an external vault, or the bundled vault without LDAP, each command fails with:
+
+```text
+Error: ... API error (422): Vault policies can only be managed when OpsChain uses the bundled secret vault with LDAP authentication
+```
+
+The policies OpsChain owns (those starting with `opschain-`) and the `default` and `root`
+policies are never listed, and cannot be created, changed, deleted or assigned.
+
+#### Secret vault admin commands
+
+```bash
+# Paths a policy rule may use
+opschain admin secret-vault mounts
+
+# Policies
+opschain admin secret-vault policies list
+opschain admin secret-vault policies get team-a-readers
+opschain admin secret-vault policies get team-a-readers --document > team-a-readers.hcl
+opschain admin secret-vault policies create team-a-readers --from-file team-a-readers.hcl
+opschain admin secret-vault policies update team-a-readers --from-file team-a-readers.hcl
+opschain admin secret-vault policies versions team-a-readers
+opschain admin secret-vault policies delete team-a-readers
+
+# Assign policies to LDAP users and groups
+opschain admin secret-vault ldap-users list
+opschain admin secret-vault ldap-users get jsmith
+opschain admin secret-vault ldap-users update jsmith --add team-a-readers
+opschain admin secret-vault ldap-groups update team-a --policies team-a-readers,shared-readers
+opschain admin secret-vault ldap-groups update team-a --clear
+```
+
+#### Find the paths a rule can use
+
+```bash
+opschain admin secret-vault mounts
+```
+
+```text
+PATH     KV VERSION
+secrets  2
+```
+
+Every rule path must be one of these mounts, or a path below one. Below a KV version 2 mount the
+secrets sit under `data/` and `metadata/`, so a rule for the `secrets` mount above reads
+`secrets/data/team-a/*`, not `secrets/team-a/*`.
+
+#### Write a policy
+
+A policy document maps each path to its rule. Write it as HCL path blocks:
+
+```text
+# Team A can read its own secrets
+path "secrets/data/team-a/*" {
+  capabilities = ["read", "list"]
+}
+```
+
+or as JSON:
+
+```json
+{"path": {"secrets/data/team-a/*": {"capabilities": ["read", "list"]}}}
+```
+
+HCL is stored as given, comments included. A rule may use the `create`, `read`, `update`,
+`patch`, `delete`, `list`, `sudo` and `deny` capabilities, and may also set
+`allowed_parameters`, `denied_parameters`, `required_parameters`, `min_wrapping_ttl` and
+`max_wrapping_ttl`. A path must not appear twice.
+
+Pass the document with `--from-file` (`-` reads standard input) or inline with `--document`:
+
+```bash
+opschain admin secret-vault policies create team-a-readers --from-file team-a-readers.hcl
+opschain admin secret-vault policies create team-a-readers \
+  --document '{"path":{"secrets/data/team-a/*":{"capabilities":["read","list"]}}}'
+```
+
+Policy names start with a lowercase letter or digit and contain only lowercase letters, digits,
+underscores and hyphens. `create` refuses a name already in use; use `update` to change an
+existing policy. A rule outside the mounts is refused with the list of mounts:
+
+```text
+Error: failed to create vault policy 'team-a-readers': API error (422): Rules must stay within the key value mounts secrets (rule 1 path 'kv/team-a/*' does not)
+```
+
+**Create and update flags** (one required):
+
+| Flag | Description |
+| --- | --- |
+| `--from-file` | File holding the policy, JSON or HCL. `-` reads standard input |
+| `--document` | The policy inline, JSON or HCL |
+
+#### Change a policy
+
+`update` replaces the whole document. To change one rule, start from the stored policy:
+
+```bash
+opschain admin secret-vault policies get team-a-readers --document > team-a-readers.hcl
+# edit team-a-readers.hcl
+opschain admin secret-vault policies update team-a-readers --from-file team-a-readers.hcl
+```
+
+`get --document` prints the policy as the vault stores it: the HCL, comments included, for an
+HCL policy, otherwise the JSON. In `-o json` output, `document` is always JSON (an HCL policy is
+converted) and `original_document` holds the HCL, or is null for a JSON policy.
+
+`policies list` shows each rule's path in the PATHS column. A policy with settings OpsChain does
+not manage shows `(not managed by OpsChain)` there, and its `rules` is null in `-o json`.
+
+#### See earlier versions
+
+```bash
+opschain admin secret-vault policies versions team-a-readers
+opschain admin secret-vault policies versions team-a-readers -o json   # includes each document
+```
+
+```text
+ID                                    SAVED AT                  SAVED BY
+01a18c9d-adcb-7d67-a3dd-85d0a4c1ef0d  2026-10-30 22:41:46 AEDT  opschain
+01a18c9d-912e-7088-9875-ba042f1de41a  2026-10-30 22:41:38 AEDT  opschain
+```
+
+Versions are listed newest first and go back to when the policy was last created. They come from
+the events OpsChain records, so purging those events removes them, and a change made in the vault
+outside OpsChain is not listed.
+
+#### Delete a policy
+
+```bash
+opschain admin secret-vault policies delete team-a-readers           # prompts to confirm
+opschain admin secret-vault policies delete team-a-readers --force   # for scripts
+```
+
+Deleting a policy first takes it away from every LDAP user and group holding it and revokes
+their vault logins, so they lose its access immediately.
+
+#### Assign policies to LDAP users and groups
+
+`ldap-users` and `ldap-groups` take the same subcommands. `list` shows only the users or groups
+holding at least one policy; `get` shows `-` for one holding none. The user or group must exist
+in the LDAP directory, and every policy must already exist in the vault.
+
+```bash
+# Add to, or take from, the current assignment
+opschain admin secret-vault ldap-groups update team-a --add team-a-writers --remove team-a-readers
+
+# Set the exact list
+opschain admin secret-vault ldap-groups update team-a --policies team-a-readers,shared-readers
+
+# Remove every policy
+opschain admin secret-vault ldap-groups update team-a --clear
+```
+
+```text
+LDAP group 'team-a' now holds team-a-readers, shared-readers
+```
+
+**Update flags** (use one of `--policies`, `--clear`, or `--add`/`--remove`):
+
+| Flag | Description |
+| --- | --- |
+| `--policies` | Replace the assignment with these policies. Comma-separated or repeated |
+| `--add` | Add these policies to the current assignment |
+| `--remove` | Remove these policies from the current assignment |
+| `--clear` | Remove every policy |
+
+`--add` and `--remove` read the current assignment and send the result, so two administrators
+changing the same user or group at once can overwrite each other. Any OpsChain-owned policy the
+user or group holds is kept whatever you send. Removing a policy revokes the user's (or the
+group members') current vault logins, so it takes effect at once.
+
 ---
 
 ## 21. Converged properties and settings
@@ -4072,13 +4403,25 @@ opschain assets converged-settings myasset -P myproject -E dev
 opschain agents converged-settings myagent -P myproject
 ```
 
+Templates and template versions have the same pair — see
+[Converge a template or template version](#converge-a-template-or-template-version).
+
 `converged-props` is an alias for `converged-properties`. Identify the node by code, name, or ID,
 the same as any other command. Each level merges everything above it, so an asset's converged view
 includes the project's and environment's values.
 
 `converged-settings` returns only the settings whose value differs from the global settings. A
 setting left at its global default does not appear, even when a level sets it explicitly to that
-same value, so a node with no overrides shows an empty result.
+same value, so a node with no overrides shows an empty result. Add `--include-global` to see the
+full effective settings, including the ones that come unchanged from the global settings (such as
+`vault.auth_method`):
+
+```bash
+opschain environments converged-settings dev -P myproject --include-global --show-sources
+```
+
+Secured, sensitive and encrypted values are left out even with `--include-global`. Servers before
+the 2026-10-30 release ignore the flag.
 
 ### See the merged values
 
@@ -4161,7 +4504,26 @@ An unknown name fails with a 400 that lists the valid ones.
 Both flags are on `converged-properties` only; settings have no layers. `--show-layers` and
 `--show-sources` cannot be combined.
 
-**Flags** (all eight commands):
+### Converge a template or template version
+
+A template's actions read the properties and settings converged for the template, and a template
+version's for that version. Show them with:
+
+```bash
+opschain templates converged-properties "Application" -P myproject
+opschain templates converged-settings "Application" -P myproject
+opschain templates versions converged-properties "Application" v1.0 -P myproject -o json
+opschain templates versions converged-settings "Application" v1.0 -P myproject --show-sources
+```
+
+Identify the template by name, or with `--code` or `--id` in place of the name.
+
+Settings merge the global settings, the project, the template and (for a version) the template
+version. Properties merge only the database properties of the project, the template and the
+version — repository properties are not included, because they depend on the node the version is
+assigned to. All the flags below work the same way here, apart from the node lookup flags.
+
+**Flags** (all twelve commands):
 
 | Flag | Default | Description |
 |---|---|---|
@@ -4169,9 +4531,10 @@ Both flags are on `converged-properties` only; settings have no layers. `--show-
 | `--show-sources` | — | Show where each value came from instead of the merged data |
 | `--show-layers` | — | `converged-properties` only. List the layers that fed the merge and whether each was included |
 | `--exclude-layer` | — | `converged-properties` only. Leave a layer out of the merge, as a preview (repeatable) |
+| `--include-global` | — | `converged-settings` only. Also return the settings whose value matches the global settings |
 | `--project` / `-P` | — | Project code. Not applicable to `projects` |
 | `--environment` / `-E` | — | Environment code, for an environment-scoped asset. Assets only |
-| `--code` / `--name` / `--id` | — | Force the lookup to a code, name, or UUID |
+| `--code` / `--name` / `--id` | — | Force the lookup to a code, name, or UUID. Templates take `--code` and `--id` only |
 
 To see the properties set *at* one level rather than the merged result, use that resource's
 `properties get` / `settings get` instead.
@@ -4304,7 +4667,7 @@ opschain artifacts upload -P myproject --code licence_key --file ./licence.key -
 Pick the node with `-P`, adding `-E` and/or `-A`. `-A` without `-E` is a project-level asset.
 Codes use lowercase letters, numbers and underscores, up to 100 characters.
 
-The `artifact.max_file_size` setting (default 500Mi; `artefact.max_file_size` on servers from before the rename) limits the file size, and a larger file is refused
+The `artifact.max_file_size` setting (default 500Mi) limits the file size, and a larger file is refused
 before anything is stored. It cannot exceed `artifact.hard_max_file_size` (default 2Gi). The CLI reads the whole file into memory to send it.
 
 **Upload flags:**
@@ -4525,9 +4888,109 @@ An update replaces the stored settings as a whole; a key you leave out falls bac
 default. `--version` on `update` is a guard: the update fails if the settings have moved on since
 that version.
 
+## 25. Your secret vault credentials
+
+When a secret vault is configured on a node, OpsChain can read and write it with your own vault
+token instead of its own. Register the token as a system credential. Log in to the vault
+yourself, create a token under the policies your vault administrators gave you, and hand OpsChain
+the token. OpsChain never sees your vault password.
+
+`credentials` is a short alias for `system-credentials`.
+
+### Manage your credentials
+
+```bash
+# List your credentials
+opschain system-credentials list
+
+# Register a token for one project, read from a file
+opschain system-credentials create --node-path /projects/myproject --token-file vault.token
+
+# Register a token that applies everywhere, piping it in
+vault print token | opschain system-credentials create --token-file -
+
+# Register a token for one template version
+opschain system-credentials create \
+  --node-path /projects/myproject/templates/oracle_db/versions/2 --token-file vault.token
+
+# Show one credential
+opschain system-credentials get 01a18c90-3928-7864-98e9-92ec4a66d992 -o yaml
+
+# Replace an expired token
+opschain system-credentials update 01a18c90-3928-7864-98e9-92ec4a66d992 --token-file vault.token
+
+# Delete a credential
+opschain system-credentials delete 01a18c90-3928-7864-98e9-92ec4a66d992
+```
+
+`list` shows only your own credentials. Nobody else can list or use them, a superuser included.
+OpsChain never returns a token, so `get` and `-o json` show where a credential applies, not the
+token.
+
+```text
+ID                                    TARGET SYSTEM  NODE PATH  VAULT    MANAGED  UPDATED AT
+01a188ed-da30-70dd-9cc7-0f8c18572de6  secret_vault   /          bundled  yes      2026-10-30T11:39:28.232523Z
+```
+
+`VAULT` is `bundled` for the vault that ships with OpsChain, otherwise the address of the vault
+the credential is bound to. A `MANAGED` credential is one OpsChain created for your sign-in
+session. You cannot update or delete it; both report `not found, or it is a managed credential,
+which is read-only`.
+
+### Where a credential applies
+
+`--node-path` sets the level:
+
+| Node path | Applies to |
+|-----------|-----------|
+| `/` (default) | Everywhere |
+| `/projects/<project>` | The project and everything in it |
+| `/projects/<project>/environments/<environment>` | The environment and its assets |
+| `/projects/<project>/assets/<asset>` or `…/environments/<environment>/assets/<asset>` | That asset |
+| `/projects/<project>/templates/<template>` | Every asset using the template |
+| `/projects/<project>/templates/<template>/versions/<version>` | Every asset using that template version |
+
+When several credentials could apply, the most specific one wins. A credential is used only for a
+vault configured at its own level or above it. A vault configured on a template version therefore
+needs a credential registered for that version or for one of its assets.
+
+You can hold one credential per system per node path. To change the token, use `update`. To move
+a credential, create a new one and delete the old one. A managed credential at `/` counts, so
+while `list` shows one there you cannot register another at `/`.
+
+### Passing the token
+
+The token is a secret. Pass it with `--token-file <file>`, or `--token-file -` to read it from
+stdin. Surrounding whitespace and the trailing newline are removed. `--token <value>` also works,
+but the token then sits in your shell history and in the process list.
+
+OpsChain checks the token with the vault for `--node-path` before storing it. It refuses:
+
+- a token the vault rejects (`Token was not accepted by …`)
+- a node path that does not exist (`Node path must be /, or the path of an existing node, template or template version`)
+- a credential for a node that uses the bundled vault, which your sign-in already gives you
+  access to (`… uses the bundled secret vault, which your sign-in already gives you access to, so it needs no credential`)
+- a second credential at the same node path (`Node path must be unique`)
+
+Deleting a credential stops OpsChain using the token. The token stays valid in the vault until you
+revoke it there.
+
+**Create flags:**
+
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--node-path` | No | `/` | Where the credential applies; must start with `/` |
+| `--target-system` | No | `secret_vault` | The external system; `secret_vault` is the only one |
+| `--token-file` | One of these | — | File holding the token; `-` reads stdin |
+| `--token` | One of these | — | The token itself; visible in shell history |
+
+**Update flags:** `--token-file` or `--token`, as for `create`. Only the token can change.
+
+`create -q` and `update -q` print the credential ID; `delete -q` prints the deleted ID.
+
 ---
 
-## 25. Troubleshooting
+## 26. Troubleshooting
 
 ### `--debug` — inspect HTTP traffic
 
