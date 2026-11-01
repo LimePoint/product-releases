@@ -125,6 +125,7 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [20.6 Drain before an upgrade](#206-drain-before-an-upgrade)
     - [20.7 Licence](#207-licence)
     - [20.8 Secret vault policies and LDAP access](#208-secret-vault-policies-and-ldap-access)
+    - [20.9 External secret vaults](#209-external-secret-vaults)
 21. [Converged properties and settings](#21-converged-properties-and-settings)
     - [See the merged values](#see-the-merged-values)
     - [Find out where a value came from](#find-out-where-a-value-came-from)
@@ -149,7 +150,7 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [Daemon settings](#daemon-settings)
 25. [Your secret vault credentials](#25-your-secret-vault-credentials)
     - [Manage your credentials](#manage-your-credentials)
-    - [Where a credential applies](#where-a-credential-applies)
+    - [Which vault a credential is for](#which-vault-a-credential-is-for)
     - [Passing the token](#passing-the-token)
 26. [Troubleshooting](#26-troubleshooting)
     - [`--debug` — inspect HTTP traffic](#--debug--inspect-http-traffic)
@@ -4389,6 +4390,111 @@ changing the same user or group at once can overwrite each other. Any OpsChain-o
 user or group holds is kept whatever you send. Removing a policy revokes the user's (or the
 group members') current vault logins, so it takes effect at once.
 
+### 20.9 External secret vaults
+
+`admin external-vaults` (alias `external-vault`) registers secret vaults that run outside
+OpsChain, beside the bundled one. A settings level picks a vault by setting `vault.code` to its
+code, and users register their own tokens for it with
+`system-credentials create --vault <code>` (see
+[Your secret vault credentials](#25-your-secret-vault-credentials)).
+
+Every command requires a superuser account.
+
+#### External vault commands
+
+```bash
+# List and inspect
+opschain admin external-vaults list
+opschain admin external-vaults get team_vault
+opschain admin external-vaults get team_vault -o json
+
+# Register a vault whose service account uses a token
+opschain admin external-vaults create team_vault --name "Team vault" \
+  --address https://team.vault.example.com:8200 --auth-method token \
+  --token-file service.token --client-options '{"namespace":"team"}'
+
+# Register one that signs in over LDAP
+opschain admin external-vaults create ops_vault --name "Ops vault" \
+  --address https://ops.vault.example.com:8200 --auth-method ldap \
+  --username svc-opschain --password-file password.txt
+
+# Rotate the service token, or change the address
+opschain admin external-vaults update team_vault --token-file new-service.token
+opschain admin external-vaults update team_vault --address https://vault2.example.com:8200
+
+# Delete
+opschain admin external-vaults delete team_vault           # prompts to confirm
+opschain admin external-vaults delete team_vault --force   # for scripts
+```
+
+`get`, `update` and `delete` take the vault's code or ID. `-q` prints the code.
+
+```text
+CODE        NAME        ADDRESS                              AUTH METHOD  CREDENTIALS  UPDATED AT
+team_vault  Team vault  https://team.vault.example.com:8200  token        token        2026-10-31T21:43:44.730174Z
+```
+
+`CREDENTIALS` names the service credentials OpsChain holds for the vault. Their values are never
+shown, and neither are the TLS certificate and passphrase in the client options.
+
+#### Register a vault
+
+The code is fixed once the vault is created, and `bundled` is reserved. OpsChain signs in to the
+vault with the service account and refuses to save it if the vault rejects the credentials or
+cannot be reached:
+
+```text
+Error: failed to create external vault 'team_vault': API error (422): The external vault did not accept the credentials: ...
+```
+
+The bundled vault's address cannot be registered, and an address can be registered only once per
+namespace.
+
+Pass a secret from a file (`-` reads standard input) rather than inline: `--vault-token` and
+`--password` land in your shell history and the process list. Only one of `--token-file` and
+`--password-file` can read standard input.
+
+`--client-options` takes the vault client options as a JSON object, for example
+`{"namespace":"team"}`, or `{"ssl_verify":false}` to skip checking the vault's TLS certificate.
+For a vault behind a private CA, put the certificate in `ssl_pem_contents`:
+
+```bash
+opschain admin external-vaults update ops_vault \
+  --client-options "$(jq -n --rawfile pem ca.pem '{ssl_pem_contents: $pem}')"
+```
+
+**Create and update flags:**
+
+| Flag | Required on create | Description |
+| --- | --- | --- |
+| `--name` | Yes | Display name |
+| `--address` | Yes | Vault address, e.g. `https://vault.example.com:8200` |
+| `--auth-method` | Yes | How the service account signs in: `token`, `userpass` or `ldap` |
+| `--token-file` | With `token` | Read the service token from this file. `-` reads standard input |
+| `--vault-token` | — | The service token inline |
+| `--username` | With `userpass`/`ldap` | Service username |
+| `--password-file` | With `userpass`/`ldap` | Read the service password from this file. `-` reads standard input |
+| `--password` | — | The service password inline |
+| `--client-options` | — | Vault client options, as a JSON object |
+
+#### Change a vault
+
+`update` changes only what you pass. A credential you leave out keeps its stored value. Switching
+`--auth-method` drops the credentials the new method does not use, so moving from `ldap` to
+`token` forgets the username and password; pass the new token in the same command.
+
+`--client-options` replaces the stored options, except `ssl_pem_contents` and
+`ssl_pem_passphrase`, which are kept unless the new options set them.
+
+#### Delete a vault
+
+Deleting a vault also deletes every user's system credential for it. A vault that a settings
+level selects, or that a change still running uses, cannot be deleted:
+
+```text
+Error: failed to delete external vault 'team_vault': API error (422): The external vault team_vault is assigned to a settings level or an unfinished change, so it cannot be deleted
+```
+
 ---
 
 ## 21. Converged properties and settings
@@ -4422,15 +4528,14 @@ includes the project's and environment's values.
 setting left at its global default does not appear, even when a level sets it explicitly to that
 same value, so a node with no overrides shows an empty result. Add `--include-global` to see the
 full effective settings, including the ones that come unchanged from the global settings (such as
-`vault.auth_method`):
+`vault.mount_path`):
 
 ```bash
 opschain environments converged-settings dev -P myproject --include-global --show-sources
 ```
 
-`--include-global` never adds a secured, sensitive or encrypted global value, or the bundled secret
-vault's address, and only adds documented settings. Servers before
-the 2026-10-30 release ignore the flag.
+`--include-global` never adds a secured, sensitive or encrypted global value, and only adds
+documented settings. Servers before the 2026-10-30 release ignore the flag.
 
 ### See the merged values
 
@@ -4912,15 +5017,14 @@ the token. OpsChain never sees your vault password.
 # List your credentials
 opschain system-credentials list
 
-# Register a token for one project, read from a file
-opschain system-credentials create --node-path /projects/myproject --token-file vault.token
+# List the vaults you can register a credential for
+opschain system-credentials vaults
 
-# Register a token that applies everywhere, piping it in
+# Register a token for an external vault, read from a file
+opschain system-credentials create --vault team_vault --token-file vault.token
+
+# Register a token for the bundled vault, piping it in
 vault print token | opschain system-credentials create --token-file -
-
-# Register a token for one template version
-opschain system-credentials create \
-  --node-path /projects/myproject/templates/oracle_db/versions/2 --token-file vault.token
 
 # Show one credential
 opschain system-credentials get 01a18c90-3928-7864-98e9-92ec4a66d992 -o yaml
@@ -4933,39 +5037,37 @@ opschain system-credentials delete 01a18c90-3928-7864-98e9-92ec4a66d992
 ```
 
 `list` shows only your own credentials. Nobody else can list or use them, a superuser included.
-OpsChain never returns a token, so `get` and `-o json` show where a credential applies, not the
-token.
+OpsChain never returns a token, so `get` and `-o json` show which vault a credential is for, not
+the token.
 
 ```text
-ID                                    TARGET SYSTEM  NODE PATH  VAULT    MANAGED  UPDATED AT
-01a188ed-da30-70dd-9cc7-0f8c18572de6  secret_vault   /          bundled  yes      2026-10-30T11:39:28.232523Z
+ID                                    TARGET SYSTEM  VAULT    VAULT NAME            MANAGED  UPDATED AT
+01a190b1-8390-7785-a277-eefab328361d  secret_vault   bundled  Bundled secret vault  yes      2026-10-31T06:41:55.085159Z
+01a190ba-53d1-7551-94bc-7d03a03d23af  secret_vault   k3s_ext  K3s external          no       2026-10-31T06:51:32.686860Z
 ```
 
-`VAULT` is `bundled` for the vault that ships with OpsChain, otherwise the address of the vault
-the credential is bound to. A `MANAGED` credential is one OpsChain created for your sign-in
-session. You cannot update or delete it; both report `not found, or it is a managed credential,
-which is read-only`.
+`VAULT` is the code of the vault the credential is for: `bundled` for the vault that ships with
+OpsChain, otherwise a registered external vault. A `MANAGED` credential is one OpsChain created
+for your sign-in session. You cannot update or delete it; both report `not found, or it is a
+managed credential, which is read-only`.
 
-### Where a credential applies
+### Which vault a credential is for
 
-`--node-path` sets the level:
+A credential is registered for one vault, not for a node. `--vault` takes the vault's code:
+`bundled` (the default) for the vault that ships with OpsChain, or the code of an external vault
+your administrators registered ([External secret vaults](#209-external-secret-vaults)). OpsChain
+uses the credential wherever that vault is configured.
+`vaults` lists the codes, the bundled vault first:
 
-| Node path | Applies to |
-|-----------|-----------|
-| `/` (default) | Everywhere |
-| `/projects/<project>` | The project and everything in it |
-| `/projects/<project>/environments/<environment>` | The environment and its assets |
-| `/projects/<project>/assets/<asset>` or `…/environments/<environment>/assets/<asset>` | That asset |
-| `/projects/<project>/templates/<template>` | Every asset using the template |
-| `/projects/<project>/templates/<template>/versions/<version>` | Every asset using that template version |
+```text
+CODE     NAME                  BUNDLED
+bundled  Bundled secret vault  yes
+k3s_ext  K3s external          no
+```
 
-When several credentials could apply, the most specific one wins. A credential is used only for a
-vault configured at its own level or above it. A vault configured on a template version therefore
-needs a credential registered for that version or for one of its assets.
-
-You can hold one credential per system per node path. To change the token, use `update`. To move
-a credential, create a new one and delete the old one. A managed credential at `/` counts, so
-while `list` shows one there you cannot register another at `/`.
+You can hold one credential per system per vault. To change the token, use `update`. To move a
+credential to another vault, create a new one and delete the old one. A managed credential for the
+bundled vault counts, so while `list` shows one there you cannot register another for it.
 
 ### Passing the token
 
@@ -4973,13 +5075,22 @@ The token is a secret. Pass it with `--token-file <file>`, or `--token-file -` t
 stdin. Surrounding whitespace and the trailing newline are removed. `--vault-token <value>` also works,
 but the token then sits in your shell history and in the process list.
 
-OpsChain checks the token with the vault for `--node-path` before storing it. It refuses:
+OpsChain checks the token with the vault named by `--vault` before storing it. It refuses:
 
 - a token the vault rejects (`Token was not accepted by …`)
-- a node path that does not exist (`Node path must be /, or the path of an existing node, template or template version`)
-- a credential for a node that uses the bundled vault, when your sign-in already gives you
-  access to it (`… uses the bundled secret vault, which your sign-in already gives you access to, so it needs no credential`)
-- a second credential at the same node path (`Node path must be unique`)
+- a code that is neither `bundled` nor a registered external vault (`External vault code must be bundled, or the code of a registered external vault`)
+- a credential for the bundled vault, when your sign-in already gives you access to it
+  (`Your sign-in already gives you access to the bundled secret vault, so it needs no credential`)
+- a second credential for the same vault (`You already have a credential for the … secret vault`,
+  or `Your sign-in already gives you a credential for the bundled secret vault` when the existing
+  one is the managed credential for your sign-in)
+
+When a `secrets` command fails because you hold no credential for a vault, it names the command
+to run, once per vault:
+
+```text
+Note: register your token for Team vault with: opschain system-credentials create --vault team_vault --token-file <file>
+```
 
 Deleting a credential stops OpsChain using the token. The token stays valid in the vault until you
 revoke it there.
@@ -4988,7 +5099,7 @@ revoke it there.
 
 | Flag | Required | Default | Description |
 |------|----------|---------|-------------|
-| `--node-path` | No | `/` | Where the credential applies; must start with `/` |
+| `--vault` | No | `bundled` | Code of the vault the credential is for; see `vaults` |
 | `--target-system` | No | `secret_vault` | The external system; `secret_vault` is the only one |
 | `--token-file` | One of these | — | File holding the token; `-` reads stdin |
 | `--vault-token` | One of these | — | The token itself; visible in shell history |
