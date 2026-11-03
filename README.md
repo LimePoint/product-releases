@@ -108,7 +108,6 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [What it collects](#what-it-collects)
     - [Credentials](#credentials)
     - [Flags](#flags)
-    - [Older servers](#older-servers)
     - [Bundle contents](#bundle-contents)
 18. [Generating an AI agent skill](#18-generating-an-ai-agent-skill)
     - [Commands](#commands-5)
@@ -1896,8 +1895,6 @@ same, and `environments list`, `assets list` and `agents list` do it for `-P` an
 Error: environment 'dve' not found in project 'myproject'
 ```
 
-Older OpsChain servers don't check the scope and print `No items found` instead.
-
 #### How many changes matched
 
 When more changes match than `--limit` returns, `changes list` prints the total to
@@ -2994,11 +2991,12 @@ blank for an activity on an environment or project.
 > revision to compare. On `create` the CLI rejects the combination before sending it; on
 > `update` it cannot tell the activity's type without fetching it, so the server rejects it.
 >
-> `--enabled=false` on `create` takes two requests: the activity is created, then
-> disabled. OpsChain only accepts `enabled` on an update, so there is no way to create
-> a disabled activity in one call. If the second request fails, the command reports the
-> activity's ID and tells you it is still enabled — disable it with
-> `scheduled-activities update <id> --enabled=false`, or delete it.
+> `--enabled=false` on `create` creates the activity switched off, so it does not run
+> until you turn it on with `scheduled-activities update <id> --enabled=true`.
+>
+> `list --enabled` matches whether an activity is switched on, not whether it can run. An
+> enabled activity that cannot be queued, for example because its asset is archived, shows
+> `no` in the ENABLED column but is still listed by `--enabled true`.
 >
 > **`--version` applies to scheduled workflows only.** On `create` it pins the schedule to
 > one workflow version; omit it and every run takes whatever the workflow's latest published
@@ -3015,8 +3013,7 @@ blank for an activity on an environment or project.
 > (repeat the flag or separate labels with commas), `list --label` returns only the
 > activities carrying **every** label you give, and matching is case-sensitive. On
 > `update`, `--label` replaces the stored labels and `--clear-labels` removes them all.
-> Labels are not copied to the changes or workflow runs an activity creates. Servers before
-> the 2026-10-30 release reject them.
+> Labels are not copied to the changes or workflow runs an activity creates.
 >
 > **`--git-remote` and `--git-rev` are refused for an asset (`-A`).** The asset's template
 > supplies the source, so `create` stops with `--git-remote and --git-rev are not valid for an
@@ -3739,17 +3736,6 @@ If the server takes longer than the gateway in front of it allows, the command f
 `the server took too long to generate the bundle (504 from the gateway); try again with
 --step-logs none or a lower --log-limit`. Collect less — `--step-logs none`, or a lower (non-zero)
 `--log-limit` — and try again.
-
-### Older servers
-
-`support bundle` needs an OpsChain server that provides the support bundle endpoint. Against an
-older server it fails with:
-
-```text
-Error: failed to collect support bundle: this command needs a newer OpsChain server that provides the support bundle endpoint; to collect a bundle from an older server, use an older opschain CLI release
-```
-
-Keep an older CLI release for collecting bundles from older servers.
 
 ### Bundle contents
 
@@ -4668,7 +4654,7 @@ opschain environments converged-settings dev -P myproject --include-global --sho
 ```
 
 `--include-global` never adds a secured, sensitive or encrypted global value, and only adds
-documented settings. Servers before the 2026-10-30 release ignore the flag.
+documented settings.
 
 ### See the merged values
 
@@ -5050,9 +5036,9 @@ opschain remote-runner-targets update dc1_runner \
 opschain remote-runner-targets delete dc1_runner
 ```
 
-`--public-key-file` must hold an RSA public key in PEM form. The CLI checks it before sending, so
-a private key, a certificate or an EC key fails straight away rather than at the first change the
-target runs.
+`--public-key-file` must hold an RSA public key in PEM form. OpsChain rejects anything else — a
+private key, a certificate or an EC key — with `Public key must be a PEM-encoded RSA public key`,
+and creates no target.
 
 ### Owners and scopes
 
