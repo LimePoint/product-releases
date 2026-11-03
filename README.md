@@ -126,6 +126,7 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [20.7 Licence](#207-licence)
     - [20.8 Secret vault policies and LDAP access](#208-secret-vault-policies-and-ldap-access)
     - [20.9 External secret vaults](#209-external-secret-vaults)
+    - [20.10 Runner credentials](#2010-runner-credentials)
 21. [Converged properties and settings](#21-converged-properties-and-settings)
     - [See the merged values](#see-the-merged-values)
     - [Find out where a value came from](#find-out-where-a-value-came-from)
@@ -760,7 +761,6 @@ opschain projects delete myproject --ignore-in-use
 | `--code` | Yes | — | Unique project code |
 | `--name` | No | same as code | Human-readable name |
 | `--description` | No | — | Optional description |
-| `--type` | No | `Enterprise` | Project type |
 
 **Update flags** (at least one required):
 
@@ -1034,8 +1034,8 @@ from the target, and if any node fails validation nothing is written at all.
 
 `merge` deep-merges the source's document over the target's. `replace` overwrites the target's
 document with the source's. `--existing`, `--asset-properties` and `--asset-settings` need
-`--assets`, which works only for an environment in an enterprise project; otherwise the clone fails
-with `assets can only be supplied when cloning an environment of an enterprise project`.
+`--assets`, which works only for an environment; otherwise the clone fails with
+`assets can only be supplied when cloning an environment`.
 
 The output has one row per node, then a summary:
 
@@ -2219,6 +2219,33 @@ polls. It therefore needs `-w`, and passing it without `-w` returns
 `--auto-continue-wait-steps requires --wait-for-completion on retry`. With `-w`,
 the command exits non-zero if the new change finishes in any state other than
 `success`.
+
+#### Retry one failed step while the change runs
+
+`changes steps retry` re-runs a single failed step inside the change that is still running,
+instead of starting a new change. Use it when one branch of a parallel step fails while its
+sibling steps are still going. Find the step's ID with `changes steps list` (§11.5):
+
+```bash
+# Find the failed step
+opschain changes steps list b5bf89b6 --filter status_code_eq=error
+
+# Retry it, optionally recording a note against the retry
+opschain changes steps retry 4a1c9f2e-1b4d-4c5e-8a9f-0123456789ab
+opschain changes steps retry 4a1c9f2e -m "Network restored, retrying"
+```
+
+The step, and the steps below it that failed or did not run, go back to `pending` and run
+again on the same step records. Steps below it that succeeded are not re-run. The retry is
+logged in the step's log after the output of the failed attempt.
+
+The step must be an action step that failed directly below a step that is still running,
+and the change must not be paused or finished. Otherwise the server refuses the retry with
+`Cannot retry step in place because its parent step is no longer running, or the change is
+paused or has finished`. Once the change has finished, retry the whole change with
+`changes retry`. Workflow steps cannot be retried this way.
+
+With `-q` the command prints the step ID; `-o json` prints the retried step.
 
 ### 11.10 Skip steps with `--skip-steps`
 
@@ -4494,6 +4521,112 @@ level selects, or that a change still running uses, cannot be deleted:
 ```text
 Error: failed to delete external vault 'team_vault': API error (422): The external vault team_vault is assigned to a settings level or an unfinished change, so it cannot be deleted
 ```
+
+### 20.10 Runner credentials
+
+`admin runner-credentials` (alias `runner-credential`) chooses which vault credentials a change's
+runner signs in with. Tag a credential on a project, environment or asset, and changes on that
+node and below use it for the credential's vault.
+
+A runner uses the deepest credential for the change's vault tagged on the change's node or above
+it. A node that no runner credential covers uses the default: the bundled vault's runner account,
+or an external vault's service credentials.
+
+Once any runner credential covers a node, every vault used on that node needs one too. A change
+on a node covered by a runner credential, but by none for the vault it uses, is rejected.
+
+Every command requires a superuser account.
+
+#### Runner credential commands
+
+```bash
+# List and inspect
+opschain admin runner-credentials list
+opschain admin runner-credentials list --vault bundled -o yaml
+opschain admin runner-credentials get payments
+opschain admin runner-credentials get prod --vault team_vault -o json
+
+# Runners for the payments project read only its mounts of the bundled vault
+opschain admin runner-credentials create payments --managed --name "Payments runners" \
+  --mount-path secret/payments --mount-path kv/payments --node /projects/payments
+
+# A token for an external vault, for one environment
+opschain admin runner-credentials create prod --vault team_vault --name "Prod runners" \
+  --auth-method token --token-file runner.token --node /projects/payments/environments/prod
+
+# Rotate a token, or move a credential to two projects
+opschain admin runner-credentials update prod --vault team_vault --token-file new-runner.token
+opschain admin runner-credentials update payments --node /projects/payments --node /projects/billing
+
+# Delete
+opschain admin runner-credentials delete payments            # prompts to confirm
+opschain admin runner-credentials delete prod --vault team_vault --force
+```
+
+`get`, `update` and `delete` take the credential's code or ID. Codes are unique per vault, not
+across vaults, so pass `--vault` when two vaults have a credential with the same code; without it
+the command fails and names the vaults. `-q` prints the code.
+
+```text
+CODE      VAULT       KIND      NAME              AUTH METHOD  TAGGED ON
+payments  bundled     managed   Payments runners  token        /projects/payments
+prod      team_vault  supplied  Prod runners      token        /projects/payments/environments/prod
+```
+
+Credential values are never shown. `-o json` and `-o yaml` add the mount paths, which credentials
+are stored and the ID.
+
+#### Managed and supplied credentials
+
+A **managed** credential is for the bundled vault only. OpsChain mints and renews its token, which
+can read only the mounts you name with `--mount-path`. It takes no token, username or password.
+
+A **supplied** credential is a token you provide, or a username and password for `userpass` or
+`ldap`. OpsChain signs in to the vault with it before saving and refuses it if the vault rejects
+it. Pass a secret from a file (`-` reads standard input) rather than inline: `--vault-token` and
+`--password` land in your shell history and the process list.
+
+The code, the vault and whether the credential is managed are fixed once it is created.
+
+**Create and update flags:**
+
+| Flag | Required on create | Description |
+| --- | --- | --- |
+| `--vault` | — | On create, the external vault's code; leave it out or pass `bundled` for the bundled vault. Elsewhere, picks the credential when its code is used for several vaults |
+| `--managed` | — | Create only. Let OpsChain mint and renew the token (bundled vault only) |
+| `--name` | Yes | Display name |
+| `--auth-method` | — | How runners sign in: `token` (default), `userpass` or `ldap` |
+| `--mount-path` | With `--managed` | A secret mount the managed token can read. Repeat for several |
+| `--node` | — | A node path to tag the credential on, e.g. `/projects/payments`. Repeat for several |
+| `--token-file` | With supplied `token` | Read the runner token from this file. `-` reads standard input |
+| `--vault-token` | — | The runner token inline |
+| `--username` | With `userpass`/`ldap` | Runner username |
+| `--password-file` | With `userpass`/`ldap` | Read the runner password from this file. `-` reads standard input |
+| `--password` | — | The runner password inline |
+
+Each node can carry one credential per vault.
+
+#### Change the tags
+
+`update` changes only what you pass, and a credential you leave out keeps its stored value.
+`--node` replaces every tag, so pass all the node paths the credential should stay on, or
+`--node ""` to untag it everywhere. `--mount-path` likewise replaces a managed credential's
+mounts.
+
+#### Nodes left without a credential
+
+After `list`, `get`, `create` and `update`, a warning is printed to standard error for each node
+where a credential's tags leave changes rejected, because no credential covers that node's own
+vault:
+
+```text
+Warning: runner credential 'prod' (vault team_vault) covers /projects/payments/environments/prod, but no runner credential for vault bundled does: changes there are rejected
+```
+
+Tag a credential for that vault on the node or above it to clear the warning.
+
+Deleting a credential removes its tags. The nodes it covered fall back to a credential tagged
+higher up, or to the default when there is none.
 
 ---
 
