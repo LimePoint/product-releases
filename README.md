@@ -1636,7 +1636,7 @@ different template is refused.
 
 A **change** runs a single action against a project, environment, or asset. Changes are how OpsChain runs an automated process — deployments, configuration updates, compliance checks, data migrations, or custom scripts. Each change has a unique ID, a status code, start/end timestamps, and a log stream.
 
-Terminal statuses: `success`, `error`, `system_error`, `cancelled`, `aborted`, `rejected`.
+Terminal statuses: `success`, `warning`, `error`, `system_error`, `cancelled`, `aborted`, `rejected`. `warning` means the change succeeded only because `ignore_failure` absorbed a failure; like `success`, it exits zero, and a waiting command prints `Note: Change finished with warnings: a failure was ignored (ignore_failure)` to stderr (except with `-q` or `-o json`).
 
 ### 11.2 Creating changes
 
@@ -1745,7 +1745,7 @@ opschain changes create \
 | `--notify-user-id` | | No | User to notify about the change, as a username or a user UUID (repeatable or comma-separated; see §11.12) |
 | `--notify-ldap-group` | | No | LDAP group to notify about the change (repeatable or comma-separated; see §11.12) |
 | `--notify-email` | | No | Email address to notify about the change (repeatable or comma-separated; see §11.12) |
-| `--notify-event` | | No | Lifecycle event that triggers a notification: `cancel`, `create`, `error`, `start`, `success`. At least one is required for anything to be sent (see §11.12) |
+| `--notify-event` | | No | Lifecycle event that triggers a notification: `cancel`, `create`, `error`, `start`, `success`, `warning` (`success` also covers `warning`). At least one is required for anything to be sent (see §11.12) |
 | `--wait-for-completion` | `-w` | No | Poll every 5 seconds until terminal state |
 | `--show-logs` | | No | Stream logs in real-time (requires `-w`) |
 | `--show-steps` | | No | Show a tree of the change's steps that updates in place as they run (requires `-w`; cannot be combined with `--show-logs`) |
@@ -1767,7 +1767,7 @@ Change running  [+01:20]
    └─ · Verify  [queued]
 ```
 
-Nested steps sit under their parents. The glyph marks state — `✔` success, `✖` error/failed,
+Nested steps sit under their parents. The glyph marks state — `✔` success, `⚠` warning, `✖` error/failed,
 `●` running, `⏸` waiting, `⊘` cancelled/aborted, `·` queued. On an interactive terminal the
 tree redraws over itself; when output is piped or redirected, status transitions print to
 stderr as usual and the finished tree is printed once at the end.
@@ -1833,7 +1833,7 @@ opschain change execute -E dev --action Shutdown --assets db1,db2 -q
 
 - Output is a per-target summary table (`ENVIRONMENT`, `ASSET`, `RESULT`, `CHANGE ID`, `DETAIL`); `-o json`/`yaml` emit it structured; `-q` prints only the created change IDs.
 - A `skipped` asset's `DETAIL` says why: `action not supported`, or `not found in project '<P>' environment '<E>'` (`not found in project '<P>'` for a project-level asset; the resolved project is named, so a wrong `-P`/`default_project` is easy to spot). An unexpected API failure (auth, server error) is a separate `error` row showing the message, not a skip.
-- **Exit code:** `0` when every target either started a change or was cleanly skipped. Non-zero if any change failed to create, an asset lookup errored (non-404), or (with `-w`/`--wait-for-completion`) any change ended in a non-`success` terminal state.
+- **Exit code:** `0` when every target either started a change or was cleanly skipped. Non-zero if any change failed to create, an asset lookup errored (non-404), or (with `-w`/`--wait-for-completion`) any change ended in a terminal state other than `success` or `warning`. With `-w`, each change that finished `warning` also gets a `Note: Change <id> finished with warnings: a failure was ignored (ignore_failure)` line on stderr (except with `-q` or `-o json`).
 - No interleaved log streaming for bulk runs — watch an individual change with `changes attach <id>`.
 - `--show-steps` (with `-w`, on an interactive terminal) replaces the live status table with one section per change — a header line (`[env] asset (change-id) status`) followed by that change's step tree, all redrawing in place. Skipped and errored targets stay as one-line entries. Off a TTY, or with `-q`/`-o json,yaml`, it prints a note and falls back to the summary. See §11.2 for the glyphs.
 
@@ -1980,7 +1980,7 @@ log, use `changes steps logs` (see below).
 
 **Follow logs in real time** with `--tail` (`-f`). It prints the initial batch,
 then streams new log lines as they arrive, stopping automatically once the change
-reaches a terminal status (`success`, `error`, `system_error`, `cancelled`, `aborted` or `rejected`). Press
+reaches a terminal status (`success`, `warning`, `error`, `system_error`, `cancelled`, `aborted` or `rejected`). Press
 `Ctrl-C` to stop early.
 
 ```bash
@@ -2035,7 +2035,7 @@ If you started a change **without** `--wait-for-completion` (for example with
 `changes attach` (aliases: `watch`, `reattach`). This gives you the same
 experience as `create --wait-for-completion`: it polls the change status every
 5 seconds, reports each status transition, and — by default — streams log lines
-in real time until the change reaches a terminal status (`success`, `error`,
+in real time until the change reaches a terminal status (`success`, `warning`, `error`,
 `system_error`, `cancelled`, `aborted` or `rejected`). Press `Ctrl-C` to detach; this does **not** affect the
 running change.
 
@@ -2171,7 +2171,7 @@ opschain changes retry b5bf89b6 -q
 ```
 
 The change being retried must have ended in `error`, `system_error`, `cancelled`, `aborted`
-or `rejected`. Retrying a `success` change returns `change '<id>' succeeded; only a change that
+or `rejected`. Retrying a `success` or `warning` change returns `change '<id>' succeeded; only a change that
 ended in error, system_error, cancelled, aborted or rejected can be retried`. Retrying a change that is still `running`, `pending`,
 or `waiting` returns `change '<id>' is not in a terminal state (status: <status>);
 cancel it before retrying`. Cancel it first with `changes cancel` (§11.7).
@@ -2215,7 +2215,7 @@ server-side auto-continue field, so the CLI releases wait steps itself while it
 polls. It therefore needs `-w`, and passing it without `-w` returns
 `--auto-continue-wait-steps requires --wait-for-completion on retry`. With `-w`,
 the command exits non-zero if the new change finishes in any state other than
-`success`.
+`success` or `warning`.
 
 #### Retry one failed step while the change runs
 
@@ -2400,7 +2400,7 @@ opschain changes create -E dev -A myasset -a deploy \
 | `--notify-user-id` | User to notify, as a username or a user UUID (repeatable or comma-separated) |
 | `--notify-ldap-group` | LDAP group to notify (repeatable or comma-separated) |
 | `--notify-email` | Email address to notify (repeatable or comma-separated) |
-| `--notify-event` | Lifecycle event that triggers a notification: `cancel`, `create`, `error`, `start`, `success` (repeatable or comma-separated) |
+| `--notify-event` | Lifecycle event that triggers a notification: `cancel`, `create`, `error`, `start`, `success`, `warning` (`success` also covers `warning`; repeatable or comma-separated) |
 
 **Name at least one event.** Targets with no `--notify-event` subscribe to nothing —
 no subscription is created and no notification is sent. `--notify-event error` on its
@@ -2615,6 +2615,12 @@ opschain workflows runs cancel $RUN_ID
 > `--skip-steps` on a workflow run matches each step's **name**, exactly or as a glob, not a
 > `full_path` as for changes. See §11.10 for the glob dialect.
 
+**Warning status.** A run's terminal statuses include `warning`: the run succeeded only because
+`ignore_failure` absorbed a failure. Like `success`, it is a successful outcome, so `runs create -w`,
+`runs attach` and `runs retry -w` exit zero, and print
+`Note: Workflow run finished with warnings: a failure was ignored (ignore_failure)` to stderr
+(except with `-q` or `-o json`).
+
 **Listing runs.** `workflows runs list --code <code>` (with a project) lists one workflow's runs.
 Omit `--code` and it lists runs across every workflow and project. In both modes `--limit` caps
 the count, `--sort` sets the order (default `updated_at desc`), and `--filter` applies ransack
@@ -2628,14 +2634,14 @@ only, or `--show-steps` to watch the step tree redraw in place instead (the two 
 combined). `--auto-continue-wait-steps` releases any plain wait step the run hits while you are
 attached; approval steps are left for you to `approve`/`reject` (see §12.3). If the run has
 already finished, attach prints its final state and exits — non-zero when the run ended in any
-non-success state, so it is safe in scripts; add `--show-steps` to also print the completed step
+state other than `success` or `warning`, so it is safe in scripts; add `--show-steps` to also print the completed step
 tree. Ctrl-C detaches without affecting the run.
 
 **Notifications.** The `--notify-*` flags subscribe recipients to a run's lifecycle events.
 Name recipients with any mix of `--notify-user-id` (a username or a user's UUID),
 `--notify-ldap-group`, and `--notify-email`; each is repeatable or comma-separated.
 `--notify-event` picks which events fire a notification — one or more of `cancel`,
-`create`, `error`, `start`, `success`. Name at least one event: targets with no events
+`create`, `error`, `start`, `success`, `warning` (`success` also covers `warning`). Name at least one event: targets with no events
 subscribe to nothing (see §11.12). OpsChain rejects an unknown event, a user it cannot find, or a
 malformed email address. Omit every `--notify-*` flag and no notifications are configured.
 
@@ -3472,7 +3478,7 @@ echo "Change: $CHANGE_ID"
 
 ### Wait for completion and check exit code
 
-The `--wait-for-completion` flag returns a non-zero exit code when the change ends in any status other than `success`, making it CI-friendly.
+The `--wait-for-completion` flag returns a non-zero exit code when the change ends in any status other than `success` or `warning`, making it CI-friendly.
 
 ```bash
 #!/usr/bin/env bash
