@@ -126,6 +126,7 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [20.8 Secret vault policies and LDAP access](#208-secret-vault-policies-and-ldap-access)
     - [20.9 External secret vaults](#209-external-secret-vaults)
     - [20.10 Runner credentials](#2010-runner-credentials)
+    - [20.11 Rotate the token signing key](#2011-rotate-the-token-signing-key)
 21. [Converged properties and settings](#21-converged-properties-and-settings)
     - [See the merged values](#see-the-merged-values)
     - [Find out where a value came from](#find-out-where-a-value-came-from)
@@ -147,6 +148,7 @@ A complete reference for the OpsChain (and MintPress) command-line interface —
     - [Owners and scopes](#owners-and-scopes)
     - [The bearer token](#the-bearer-token)
     - [Maintenance mode for a target](#maintenance-mode-for-a-target)
+    - [Upgrade the daemon](#upgrade-the-daemon)
     - [Daemon settings](#daemon-settings)
 25. [Your secret vault credentials](#25-your-secret-vault-credentials)
     - [Manage your credentials](#manage-your-credentials)
@@ -1636,7 +1638,7 @@ different template is refused.
 
 A **change** runs a single action against a project, environment, or asset. Changes are how OpsChain runs an automated process — deployments, configuration updates, compliance checks, data migrations, or custom scripts. Each change has a unique ID, a status code, start/end timestamps, and a log stream.
 
-Terminal statuses: `success`, `warning`, `error`, `system_error`, `cancelled`, `aborted`, `rejected`. `warning` means the change succeeded only because `ignore_failure` absorbed a failure; like `success`, it exits zero, and a waiting command prints `Note: Change finished with warnings: a failure was ignored (ignore_failure)` to stderr (except with `-q` or `-o json`).
+Terminal statuses: `success`, `warning`, `error`, `system_error`, `cancelled`, `aborted`, `rejected`, `skipped`. A change ends `skipped` when its action's `run_if` condition is false, so nothing ran; it exits non-zero like the other non-success statuses. `warning` means the change succeeded only because `ignore_failure` absorbed a failure; like `success`, it exits zero, and a waiting command prints `Note: Change finished with warnings: a failure was ignored (ignore_failure)` to stderr (except with `-q` or `-o json`).
 
 ### 11.2 Creating changes
 
@@ -1768,8 +1770,18 @@ Change running  [+01:20]
 ```
 
 Nested steps sit under their parents. The glyph marks state — `✔` success, `⚠` warning, `✖` error/failed,
-`●` running, `⏸` waiting, `⊘` cancelled/aborted, `·` queued. On an interactive terminal the
-tree redraws over itself; when output is piped or redirected, status transitions print to
+`●` running, `⏸` waiting, `⊘` cancelled/aborted, `○` skipped, `·` queued. An arm of a branch
+is labelled `<key> (arm)` and a choice of a wait step `<key> (choice)`. When a branch took or
+skipped a step, or `--skip-steps` skipped it, the line ends with the reason, as in the `REASON`
+column of `changes steps list` (§11.5):
+
+```text
+   ├─ ✔ Region  [success] (00:03)  - Block returned "apac"
+   │  ├─ ✔ apac (arm)  [success] (00:01)  - Block returned "apac"
+   │  └─ ○ eu (arm)  [skipped] (00:00)  - not taken
+```
+
+On an interactive terminal the tree redraws over itself; when output is piped or redirected, status transitions print to
 stderr as usual and the finished tree is printed once at the end.
 
 `--show-steps` requires `-w` and can't be combined with `--show-logs` — both take over the
@@ -1980,7 +1992,7 @@ log, use `changes steps logs` (see below).
 
 **Follow logs in real time** with `--tail` (`-f`). It prints the initial batch,
 then streams new log lines as they arrive, stopping automatically once the change
-reaches a terminal status (`success`, `warning`, `error`, `system_error`, `cancelled`, `aborted` or `rejected`). Press
+reaches a terminal status (`success`, `warning`, `error`, `system_error`, `cancelled`, `aborted`, `rejected` or `skipped`). Press
 `Ctrl-C` to stop early.
 
 ```bash
@@ -2006,7 +2018,7 @@ just one step — usually the one that failed — find its ID with `changes step
 pass it to `changes steps logs`:
 
 ```bash
-# Every step of the change, in sequence order
+# Every step of the change, as a tree
 opschain changes steps list b5bf89b6-6512-4f18-8b4d-cdac8a597231
 
 # Only the failed steps' IDs
@@ -2020,9 +2032,40 @@ opschain changes steps logs 4a1c9f2e --limit 0
 opschain changes steps logs 4a1c9f2e --include-child-steps --out-file step.log
 ```
 
-`changes steps list` shows each step's ID, action, name, sequence number and status. It
-returns at most 1000 steps; if a change has more, a note on stderr says so. `--limit`
-narrows the list further.
+`changes steps list` lists the steps in tree order: each step is followed by its children,
+and `STEP` is indented one level per depth. An arm of a branch shows as `<key> (arm)`, and a
+choice of a wait step as `<key> (choice)`. `ACTION` is blank for arms and for the actions
+OpsChain generates for branch and wait steps.
+
+```text
+ID                                    STEP                ACTION     STATUS   REASON
+01a1bec3-c43e-750b-b001-bc5de3b34597  release             release    running
+01a1bec3-e9cb-70e9-8f56-2e4e9b8c3ba9    Region                       success  Block returned "eu"
+01a1bec3-f135-7303-b7d0-1d39f2468e79      apac (arm)                 skipped  not taken
+01a1bec3-f19e-7f1f-a8fe-614eec1b9cc5        apac_step     apac_step  skipped  not taken
+01a1bec3-f158-7127-a19f-ddee292c7894      eu (arm)                   success  Block returned "eu"
+01a1bec3-ea28-7f55-b52c-7bf04c52f60c    Promote?                     waiting
+01a1bec4-0075-7478-add5-4290b00702c8      promote (choice)           pending
+-                                           deploy        deploy     pending
+```
+
+`REASON` says why a conditional branch took or skipped the step: the arm's or `run_if`'s
+reason (for example `Block returned "eu"`), `not taken` for a step in an arm that didn't run
+(followed by the arm's reason when there is one), or `skipped on request` for a step skipped
+with `--skip-steps`.
+
+OpsChain creates the steps under a choice only once the choice is made. Until then the table
+lists them from the change's step tree with the ID `-` and the status `pending`. It does this
+only when it lists every step, so not with `--filter` or `--limit`, or when the server
+truncated the list. Steps under a step that has finished, or was skipped or not taken, are
+never created, so they aren't listed.
+
+`-o json` and `-o yaml` print every attribute the API returns for each step, in the server's
+order, including `full_path`, `skip_reason`, `arm`, `selected_arm`, `arm_reason`, `branch`,
+`choices`, `default` and `run_if`. `-q` prints the step IDs in the table's order, without
+the `-` rows. The command
+returns at most 1000 steps; if a change has more, a note on stderr says so. `--limit` narrows
+the list further.
 
 `changes steps logs` takes the same `--limit`, `--utc` and `--out-file` flags as
 `changes logs`, but not `--tail`. It returns only the step's own lines unless you add
@@ -2036,7 +2079,7 @@ If you started a change **without** `--wait-for-completion` (for example with
 experience as `create --wait-for-completion`: it polls the change status every
 5 seconds, reports each status transition, and — by default — streams log lines
 in real time until the change reaches a terminal status (`success`, `warning`, `error`,
-`system_error`, `cancelled`, `aborted` or `rejected`). Press `Ctrl-C` to detach; this does **not** affect the
+`system_error`, `cancelled`, `aborted`, `rejected` or `skipped`). Press `Ctrl-C` to detach; this does **not** affect the
 running change.
 
 ```bash
@@ -2064,7 +2107,7 @@ opschain changes attach "$CHANGE_ID"
 ```
 
 Like `create --wait-for-completion`, `attach` exits non-zero when the change ends
-in a non-success terminal state (`error`, `system_error`, `cancelled`, `aborted`, `rejected`), so it is safe
+in a non-success terminal state (`error`, `system_error`, `cancelled`, `aborted`, `rejected`, `skipped`), so it is safe
 to use in CI. If the change has already finished when you attach, its final state
 is printed and the command exits immediately; add `--show-steps` to also print the
 completed step tree — a quick way to inspect a finished change's steps.
@@ -2091,6 +2134,10 @@ opschain changes cancel b5bf89b6 -o json   # prints the change after the cancel
 > **Note:** Any change that hasn't finished can be cancelled — pending, queued, running or waiting.
 > Cancelling a finished change returns `Change cannot be cancelled because it is already finalised`.
 
+Steps already running have to stop before the change finishes, so for a while after you cancel it
+`changes get` shows the change as, for example, `running (cancelling)`. `workflows runs get`
+does the same for a cancelled workflow run.
+
 ### 11.8 Continue a waiting change
 
 A change that contains a **wait step** pauses in the `waiting` state until it is
@@ -2113,6 +2160,9 @@ opschain changes continue b5bf89b6 --all
 # Continue an input step, supplying the values it is waiting on
 opschain changes continue b5bf89b6 --input-arguments '{"name":"John","date":"2026-07-23"}'
 
+# Continue a wait step with choices, picking the choice to run
+opschain changes continue b5bf89b6 --choice promote
+
 # Scripting: print continued step IDs only
 opschain changes continue b5bf89b6 -q
 ```
@@ -2126,8 +2176,40 @@ accidentally releasing every wait step at once.
 as a JSON object with `--input-arguments`; the keys and values are whatever the step
 expects. Combine it with `--step` or `--all` the same way as a plain continue.
 
+**Choices:** a wait step can offer named choices, each running a different set of
+steps. Pass `--choice <name>` to pick one. Without `--choice` the step's default
+choice runs. If the step has no default, the API rejects the continue and lists the
+choices, for example `Choice must be given as the step has no default choice -
+choose one of promote, rollback`. A name the step doesn't offer, or `--choice` on a
+step without choices, is rejected the same way.
+
 > **Note:** Continuing a step that is not in the `waiting` state returns an error
 > from the API (e.g. `Cannot continue step because it is in the "success" state`).
+> A step that needs approval can't be continued; approve or reject it instead.
+
+#### Approve or reject a step
+
+A step that needs approval pauses in the `waiting_for_approval` state. `changes
+approve` and `changes reject` find the change's steps in that state and act on them,
+with the same `--step`, `--all`, `-m/--message` and `-q` behaviour as `continue`.
+
+```bash
+# Approve a change with a single step waiting for approval
+opschain changes approve b5bf89b6-6512-4f18-8b4d-cdac8a597231
+
+# Approve and pick the choice to run
+opschain changes approve b5bf89b6 --choice promote
+
+# Approve a specific step, with a note
+opschain changes approve b5bf89b6 --step afe3063d-3182-4c03-90c8-66ff933c15db -m "Reviewed the plan"
+
+# Reject, recording the reason
+opschain changes reject b5bf89b6 -m "Wrong target environment"
+```
+
+`--choice` works on `approve` as it does on `continue`, for an approval step with
+choices. `reject` takes no choice. You need permission to approve the step; if you
+don't have it, the API returns `403 Forbidden`.
 
 **Continue automatically:** to run a change straight through its wait steps without a manual
 `continue`, pass `--auto-continue-wait-steps` on `create` or `execute`. This sets the flag on the change
@@ -2166,6 +2248,9 @@ opschain changes retry b5bf89b6 --refresh-sha
 # Retry but skip different steps this time
 opschain changes retry b5bf89b6 --skip-steps 'deploy/**'
 
+# Retry, running the steps the original skipped (e.g. its on_failure rollback)
+opschain changes retry b5bf89b6 --skip-steps ''
+
 # Scripting: print the new change ID only
 opschain changes retry b5bf89b6 -q
 ```
@@ -2174,7 +2259,8 @@ The change being retried must have ended in `error`, `system_error`, `cancelled`
 or `rejected`. Retrying a `success` or `warning` change returns `change '<id>' succeeded; only a change that
 ended in error, system_error, cancelled, aborted or rejected can be retried`. Retrying a change that is still `running`, `pending`,
 or `waiting` returns `change '<id>' is not in a terminal state (status: <status>);
-cancel it before retrying`. Cancel it first with `changes cancel` (§11.7).
+cancel it before retrying`. Cancel it first with `changes cancel` (§11.7). A `skipped` change can't be
+retried, since nothing in it ran; create a new change to run the action again.
 
 **What carries over.** The server re-runs the change with the original's action,
 git commit, build-cache setting, skip-steps, and overrides — it reuses the
@@ -2249,7 +2335,10 @@ With `-q` the command prints the step ID; `-o json` prints the retried step.
 `--skip-steps` skips selected steps of an action instead of running them. You pass
 glob patterns; each pattern is matched against a step's **`full_path`** — the
 slash-joined chain of action codes from the root of the tree down to that step.
-The last segment of a `full_path` is the step's action code.
+In a tree without branches, the last segment of a `full_path` is the step's action code.
+A branch or wait step contributes its name rather than its generated action
+(`release/Promote?`), and an arm or choice contributes its key (`release/Promote?/promote`).
+`changes steps list -o json` shows each step's `full_path`.
 
 Here is part of the step tree for a `Provision` change, with the `full_path` you'd
 match on beside each step:
@@ -2341,7 +2430,8 @@ that root in your patterns or anchor them with `**/`.
 `changes execute`, `changes retry`, `workflows runs create`, `workflows runs
 retry`, `scheduled-activities create`, and `scheduled-activities update`. On the
 retry commands, omitting `--skip-steps` inherits the original run's patterns;
-passing it replaces them.
+passing it replaces them, and `--skip-steps ''` clears them so every step runs.
+`scheduled-activities update --skip-steps ''` clears an activity's patterns the same way.
 
 **Workflow runs match step names, not paths.** On `workflows runs create`,
 `workflows runs retry` and a `scheduled_workflow`, each pattern is compared with a
@@ -2581,6 +2671,9 @@ opschain workflows runs list --code deploy-app --limit 20
 # List runs across every workflow and project (omit --code)
 opschain workflows runs list --limit 50
 
+# Recent runs of every workflow in one project
+opschain workflows runs list -P myproject --limit 50
+
 # All runs that errored, newest first
 opschain workflows runs list --filter status_code_eq=error
 
@@ -2622,8 +2715,9 @@ opschain workflows runs cancel $RUN_ID
 (except with `-q` or `-o json`).
 
 **Listing runs.** `workflows runs list --code <code>` (with a project) lists one workflow's runs.
-Omit `--code` and it lists runs across every workflow and project. In both modes `--limit` caps
-the count, `--sort` sets the order (default `updated_at desc`), and `--filter` applies ransack
+Omit `--code` and it lists runs across every workflow and project; add `-P <project>` to list
+only that project's runs. A default project, from your profile's `default_project` or
+`OPSCHAIN_DEFAULT_PROJECT`, doesn't narrow this list. In both modes `--limit` caps the count, `--sort` sets the order (default `updated_at desc`), and `--filter` applies ransack
 predicates (`field_predicate=value`, repeatable) — e.g. `--filter status_code_eq=error`.
 
 **Attaching to a run.** `workflows runs create -w` waits and streams from the start, but a run
@@ -2634,8 +2728,8 @@ only, or `--show-steps` to watch the step tree redraw in place instead (the two 
 combined). `--auto-continue-wait-steps` releases any plain wait step the run hits while you are
 attached; approval steps are left for you to `approve`/`reject` (see §12.3). If the run has
 already finished, attach prints its final state and exits — non-zero when the run ended in any
-state other than `success` or `warning`, so it is safe in scripts; add `--show-steps` to also print the completed step
-tree. Ctrl-C detaches without affecting the run.
+state other than `success` or `warning` (including `skipped`), so it is safe in scripts; add
+`--show-steps` to also print the completed step tree. Ctrl-C detaches without affecting the run.
 
 **Notifications.** The `--notify-*` flags subscribe recipients to a run's lifecycle events.
 Name recipients with any mix of `--notify-user-id` (a username or a user's UUID),
@@ -2679,19 +2773,29 @@ opschain workflows runs steps logs $STEP_ID --utc
 opschain workflows runs steps logs $STEP_ID --out-file step.log
 
 # Approve an approval step (releases it so the run continues)
-opschain workflows runs steps approve $STEP_ID --message "reviewed and approved"
+opschain workflows runs steps approve $STEP_ID -m "reviewed and approved"
 
 # Reject an approval step (fails it so the run stops there)
-opschain workflows runs steps reject $STEP_ID --message "wrong target environment"
+opschain workflows runs steps reject $STEP_ID -m "wrong target environment"
 
 # Continue a wait step
 opschain workflows runs steps continue $STEP_ID
+
+# Pick the choice to run on a step with choices
+opschain workflows runs steps approve $STEP_ID --choice promote
+opschain workflows runs steps continue $STEP_ID --choice promote
 ```
 
-`--message` is optional on `approve`, `reject`, and `continue`; the note is recorded against the
-step. On success each prints the step's new status, or just the step ID with `-q`. The `TYPE`
+`-m`/`--message` is optional on `approve`, `reject`, and `continue`; the note is recorded against the
+step. `--choice` on `approve` and `continue` names the choice to run on a step with choices; it
+behaves as for change steps (§11.8). On success each prints the step's new status, or just the step ID with `-q`. The `TYPE`
 column in `list` shows the step kind — `wait`, `change`, `noop`, or `workflow` (a child
-workflow).
+workflow). `REASON` says why a `when:` condition or a stage's arms took or skipped the step,
+for example `region is "eu"`, `not taken` for a step in an arm that didn't run (followed by the
+reason, as in `not taken: done is true`), or `skipped on request` for a step skipped with
+`--skip-steps`. `--tree` adds the same reason to each step's line, after a `-`. `-o json` and
+`-o yaml` print every attribute the API returns, including `arm`, `branch`, `choices`,
+`default` and `when`.
 
 To find a paused step, run `workflows runs steps list $RUN_ID` and look for `waiting` in the
 `STATUS` column; the `REQUIRES APPROVAL` column names the users or groups whose approval an
@@ -3400,6 +3504,9 @@ opschain events create \
   --type "deploy.completed" \
   --data '{"environment": "prod", "version": "v2.1.0", "triggered_by": "github-actions"}'
 
+# Attach the event to a node, so events list -P/-E/-A finds it
+opschain events create --type "deploy.completed" --node-path /projects/web/environments/prod
+
 # Load data from a file
 opschain events create --type "deploy.completed" --from-file ./event-payload.json
 
@@ -3421,7 +3528,7 @@ The JSON file (or `--data` value) should be a flat or nested object — its keys
 }
 ```
 
-`events get` and `events list` show these keys with `--output json` or `--output yaml`, beside `type`, `username` and the other standard attributes. The table shows only the standard columns. A custom event has no node, so its `event_node_path` is `null` and the `NODE PATH` column shows `-`.
+`events get` and `events list` show these keys with `--output json` or `--output yaml`, beside `type`, `username` and the other standard attributes. The table shows only the standard columns. A custom event created without `--node-path` has no node, so its `event_node_path` is `null` and the `NODE PATH` column shows `-`.
 
 ---
 
@@ -4196,6 +4303,7 @@ turned off. `admin drain-status` (alias
 
 ```bash
 opschain info get                   # MAINTENANCE MODE: off, on, or on (superusers exempt)
+opschain info maintenance-mode      # the same, plus RESUMING UNTIL; -q prints true or false
 opschain admin drain-status
 opschain admin drain-status --wait  # returns once everything has finished
 opschain admin drain-status -q      # true or false
@@ -4211,6 +4319,10 @@ DRAINED turns to `yes` when all three counts reach zero; it is then safe to stop
 
 With `on (superusers exempt)`, superusers can still start work while maintenance mode is on, so
 a drain can be undone by one of them starting a change.
+
+After maintenance mode is turned off, `info maintenance-mode` shows RESUMING UNTIL for a short
+while: the time by which the work it held will have had a chance to start. Any user can run
+`info maintenance-mode`; `admin drain-status` needs an administrator.
 
 ### 20.7 Licence
 
@@ -4619,6 +4731,34 @@ Tag a credential for that vault on the node or above it to clear the warning.
 
 Deleting a credential removes its tags. The nodes it covered fall back to a credential tagged
 higher up, or to the default when there is none.
+
+### 20.11 Rotate the token signing key
+
+OpsChain signs API tokens, and the log tokens it gives running steps and agents, with one key.
+`admin token-signing-key` (alias `signing-key`) shows when it was last rotated and rotates it.
+Both need an administrator account.
+
+```bash
+opschain admin token-signing-key get
+opschain admin token-signing-key rotate
+opschain admin token-signing-key rotate --compromised   # prompts; --force skips the prompt
+```
+
+```text
+ROTATED AT                PREVIOUS KEYS  STEPS ON PREVIOUS SECRET  AGENTS ON PREVIOUS SECRET
+2026-11-12 20:32:37 AEDT  1              0                         0
+```
+
+A routine rotation keeps the previous key, so tokens already issued keep working until they
+expire. PREVIOUS KEYS counts the retired keys still accepted; OpsChain drops them once no
+unexpired token and no running step or agent depends on them. The last two columns count the
+steps and agents still holding a log token signed before the rotation. `get -q` prints only the
+rotation time, or `never`.
+
+Rotate with `--compromised` when the key may have leaked. It drops every previous key at once:
+every API token issued before the rotation stops working, for every user, including the token in
+your profile. The CLI signs in again with the profile's username and password on the next
+command.
 
 ---
 
@@ -5038,6 +5178,10 @@ opschain remote-runner-targets update dc1_runner --maintenance-mode
 opschain remote-runner-targets update dc1_runner \
   --scope-path /projects/myproject/environments/prod/assets/db
 
+# Upgrade outdated daemons automatically, or ask one to upgrade now
+opschain remote-runner-targets update dc1_runner --auto-upgrade true
+opschain remote-runner-targets upgrade dc1_runner
+
 # Delete a target
 opschain remote-runner-targets delete dc1_runner
 ```
@@ -5077,6 +5221,23 @@ replaced by a regular file holding the token; the file it pointed to is not chan
 
 LIVE shows `yes` while the daemon is polling. KEY EXPIRES flags an overdue key rotation.
 
+### Upgrade the daemon
+
+DAEMON shows the version the daemon last reported. When it differs from the daemon bundled with
+OpsChain, its status follows in brackets: `outdated`, `incompatible`, `ahead` or `unknown`. A dash
+means the daemon has not reported yet.
+
+`upgrade` asks an outdated or incompatible daemon to upgrade to the bundled version the next time
+it polls, and DAEMON then adds `upgrade requested`. The daemon's host must allow upgrades
+(`daemon_upgrade_allowed` in `get -o json`); otherwise the request fails with
+`The remote runner daemon must be outdated or incompatible, and its host must allow upgrades`.
+
+`update --auto-upgrade true` upgrades the daemon without asking whenever it falls behind, and
+`false` turns that off. `--auto-upgrade default` makes the target follow the
+`remote_runners.auto_upgrade` setting again. `get -o json` shows the target's own value as
+`auto_upgrade` (`null` when it follows the setting) and the one in force as
+`effective_auto_upgrade`.
+
 **Create flags:**
 
 | Flag | Required | Description |
@@ -5096,6 +5257,7 @@ LIVE shows `yes` while the daemon is polling. KEY EXPIRES flags an overdue key r
 |---|---|
 | `--description` | New description; `""` clears it |
 | `--maintenance-mode` | Stop claiming new work; `=false` resumes |
+| `--auto-upgrade` | `true`, `false`, or `default` to follow the `remote_runners.auto_upgrade` setting |
 | `--scope-path` | Replace the scopes with these paths |
 | `--clear-scopes` | Remove every scope |
 
