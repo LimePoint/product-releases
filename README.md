@@ -1,6 +1,6 @@
-# MintPress CLI Guide
+# OpsChain CLI Guide
 
-A complete reference for the MintPress command-line interface — from first-time setup through advanced automation patterns.
+A complete reference for the OpsChain (and MintPress) command-line interface — from first-time setup through advanced automation patterns.
 
 ---
 
@@ -87,7 +87,6 @@ A complete reference for the MintPress command-line interface — from first-tim
     - [14.3 Rules](#143-rules)
     - [14.4 Assignments](#144-assignments)
     - [14.5 Examples](#145-examples)
-    - [14.6 Check why a user can or cannot make a request](#146-check-why-a-user-can-or-cannot-make-a-request)
 15. [Events](#15-events)
     - [15.1 Listing events](#151-listing-events)
     - [15.2 Convenience filters](#152-convenience-filters)
@@ -165,20 +164,20 @@ A complete reference for the MintPress command-line interface — from first-tim
 
 ## 1. Introduction
 
-The MintPress CLI (`mintpress`) drives the MintPress API from the command line. MintPress is a GitOps-based, event-driven change manager: it orchestrates repeatable, auditable changes across your systems — software deployments, configuration updates, compliance remediations, database migrations. Use the CLI to manage every resource in your instance: projects, environments, assets, workflows, changes, scheduled activities, and authorisation policies.
+The OpsChain CLI (`opschain`) drives the OpsChain API from the command line. OpsChain is a GitOps-based, event-driven change manager: it orchestrates repeatable, auditable changes across your systems — software deployments, configuration updates, compliance remediations, database migrations. Use the CLI to manage every resource in your instance: projects, environments, assets, workflows, changes, scheduled activities, and authorisation policies.
 
 ### Multi-brand note
 
-The same codebase ships as two branded binaries:
+The same binary codebase ships as two branded products:
 
 | Binary | Config directory | Env var prefix |
 |---|---|---|
-| `mintpress` | `~/.mintpress/` | `MINTPRESS_` |
 | `opschain` | `~/.opschain/` | `OPSCHAIN_` |
+| `mintpress` | `~/.mintpress/` | `MINTPRESS_` |
 
 Branding is detected automatically from the binary filename.
 
-> **Note:** All examples use `mintpress`. Every command works identically with `opschain` — substitute the binary name, the config directory and the variable prefix.
+> **Note:** All examples use `opschain`. Every command works identically with `mintpress` — substitute the binary name.
 
 ---
 
@@ -192,69 +191,68 @@ Pre-built binaries for all platforms are published to the public [limepoint/prod
 2. Download the zip for your platform:
     | Platform | File |
     |----------|------|
-    | macOS (Apple Silicon) | `mintpress_darwin_arm64.zip` |
-    | macOS (Intel) | `mintpress_darwin_amd64.zip` |
-    | Linux (x86-64) | `mintpress_linux_amd64.zip` |
-    | Linux (ARM64) | `mintpress_linux_arm64.zip` |
-    | Windows (x86-64) | `mintpress_windows_amd64.zip` |
-    | Windows (ARM64) | `mintpress_windows_arm64.zip` |
+    | macOS (Apple Silicon) | `opschain_darwin_arm64.zip` |
+    | macOS (Intel) | `opschain_darwin_amd64.zip` |
+    | Linux (x86-64) | `opschain_linux_amd64.zip` |
+    | Linux (ARM64) | `opschain_linux_arm64.zip` |
+    | Windows (x86-64) | `opschain_windows_amd64.zip` |
+    | Windows (ARM64) | `opschain_windows_arm64.zip` |
 
 3. Unzip and place the binary on your `PATH`:
 
    ```bash
    # macOS / Linux example
-   unzip mintpress_darwin_arm64.zip
-   chmod +x mintpress
+   unzip opschain_darwin_arm64.zip
+   chmod +x opschain
    mkdir -p ~/.local/bin
-   mv mintpress ~/.local/bin/
+   mv opschain ~/.local/bin/
    # ensure ~/.local/bin is on your PATH, e.g. add to ~/.bash_profile or ~/.zshrc:
    #   export PATH="$HOME/.local/bin:$PATH"
    ```
 
-   If you prefer a system-wide install and have administrator rights, you can instead place the binary in `/usr/local/bin` (`sudo mv mintpress /usr/local/bin/`). The user-local install above avoids needing sudo and is the better choice on locked-down machines.
+   If you prefer a system-wide install and have administrator rights, you can instead place the binary in `/usr/local/bin` (`sudo mv opschain /usr/local/bin/`). The user-local install above avoids needing sudo and is the better choice on locked-down machines.
 
 4. On **macOS**, the binary is signed and notarized by LimePoint — Gatekeeper will accept it automatically. If you see a security prompt, go to **System Settings → Privacy & Security** and click **Allow Anyway**.
-
-   OpsChain users: download `opschain_<platform>.zip` (for example `opschain_linux_amd64.zip`) from the same release page and use `opschain` in place of `mintpress`.
+  MintPress users: download `mintpress_<platform>.zip` from the same release page.
 
 ### Use the Docker image
 
 Docker images are published to Docker Hub for Linux (amd64 and arm64). This is the recommended option for CI/CD pipelines and Linux servers.
 
-| Binary | Docker Hub |
-|--------|-----------|
-| `mintpress` | `limepoint/mintpress-cli` |
-| `opschain` | `limepoint/opschain-cli` |
+| Image | Docker Hub |
+|-------|-----------|
+| OpsChain | `limepoint/opschain-cli` |
+| MintPress | `limepoint/mintpress-cli` |
 
 ```bash
 # Always latest
-docker run --rm limepoint/mintpress-cli:latest --help
+docker run --rm limepoint/opschain-cli:latest --help
 
 # Pinned version
-docker run --rm limepoint/mintpress-cli:1.0.0 --help
+docker run --rm limepoint/opschain-cli:1.0.0 --help
 ```
 
 Pass credentials via environment variables — no config file needed:
 
 ```bash
 docker run --rm \
-  -e MINTPRESS_API_URL=https://mintpress.example.com \
-  -e MINTPRESS_USERNAME=alice \
-  -e MINTPRESS_PASSWORD=s3cr3t \
-  limepoint/mintpress-cli:latest projects list
+  -e OPSCHAIN_API_URL=https://opschain.example.com \
+  -e OPSCHAIN_USERNAME=alice \
+  -e OPSCHAIN_PASSWORD=s3cr3t \
+  limepoint/opschain-cli:latest projects list
 ```
 
 To use a config file from your host machine, mount it:
 
 ```bash
 docker run --rm \
-  -v ~/.mintpress:/home/mintpress/.mintpress:ro \
-  limepoint/mintpress-cli:latest --profile staging projects list
-
-# opschain binary
-docker run --rm \
   -v ~/.opschain:/home/opschain/.opschain:ro \
   limepoint/opschain-cli:latest --profile staging projects list
+
+# MintPress
+docker run --rm \
+  -v ~/.mintpress:/home/mintpress/.mintpress:ro \
+  limepoint/mintpress-cli:latest --profile staging projects list
 ```
 
 > **Note:** macOS and Windows users can use these Docker images via Docker Desktop, which runs a Linux VM transparently. For native macOS/Windows, download the pre-built binary above instead.
@@ -262,8 +260,8 @@ docker run --rm \
 ### Verify installation
 
 ```bash
-mintpress version
-# mintpress client version: 1.0.0
+opschain version
+# opschain client version: 1.0.0
 #   commit: abc1234
 #   built:  2025-01-01 00:00:00 UTC
 ```
@@ -274,24 +272,24 @@ mintpress version
 
 ### 3.1 Config file format
 
-The config file lives at `~/.mintpress/config.yaml` by default. A typical multi-profile file looks like this:
+The config file lives at `~/.opschain/config.yaml` by default. A typical multi-profile file looks like this:
 
 ```yaml
 current_profile: dev
 profiles:
   dev:
-    api_url: https://dev.mintpress.example.com
+    api_url: https://dev.opschain.example.com
     username: alice
     password: s3cr3t
     insecure: false
     timeout: 60
     default_project: platform
   staging:
-    api_url: https://staging.mintpress.example.com
+    api_url: https://staging.opschain.example.com
     token: eyJhbGciOiJIUzI1NiJ9...   # bearer token instead of username/password
     timeout: 120
   prod:
-    api_url: https://mintpress.example.com
+    api_url: https://opschain.example.com
     username: deploy-bot
     password: prodsecret
     insecure: false
@@ -313,110 +311,108 @@ profiles:
 
 ### 3.2 Profiles
 
-Profiles let you maintain separate credentials for different MintPress instances (dev, staging, production) in a single config file.
+Profiles let you maintain separate credentials for different OpsChain instances (dev, staging, production) in a single config file.
 
 ```bash
 # Manage profiles interactively
-mintpress config profiles add dev
-mintpress config profiles add staging --token eyJhbGci...   # token-based profile
-mintpress config profiles list
-mintpress config profiles show dev
-mintpress config profiles update dev --api-url https://new-dev.example.com
-mintpress config profiles update staging --token eyJnewToken...   # refresh a token
-mintpress config profiles use staging      # sets current_profile in config file
-mintpress config profiles delete old-env
+opschain config profiles add dev
+opschain config profiles add staging --token eyJhbGci...   # token-based profile
+opschain config profiles list
+opschain config profiles show dev
+opschain config profiles update dev --api-url https://new-dev.example.com
+opschain config profiles update staging --token eyJnewToken...   # refresh a token
+opschain config profiles use staging      # sets current_profile in config file
+opschain config profiles delete old-env
 
 # Manage the profiles in another config file
-mintpress config profiles list --config ./ci-config.yaml
+opschain config profiles list --config ./ci-config.yaml
 
 # Use a non-default profile for a single command
-mintpress --profile staging projects list
-mintpress -p prod changes list
+opschain --profile staging projects list
+opschain -p prod changes list
 ```
 
 A profile must keep a username or a token. `config profiles update` refuses to clear the last
 one (for example `--token ""` on a token-only profile) unless the same command sets the other:
 
 ```bash
-mintpress config profiles update staging --token "" --username alice --password s3cr3t
+opschain config profiles update staging --token "" --username alice --password s3cr3t
 ```
 
 Deleting the current profile leaves no profile selected. Until you pick another with
-`mintpress config profiles use <name>`, commands stop with
-`no profile selected - run 'mintpress config profiles use <name>' or pass --profile`.
+`opschain config profiles use <name>`, commands stop with
+`no profile selected - run 'opschain config profiles use <name>' or pass --profile`.
 If it was your only profile, the error is instead
-`no API URL configured - run 'mintpress config profiles add <name>' or set MINTPRESS_API_URL`.
-`MINTPRESS_API_URL` and the other environment variables (§3.3) still work without a profile.
+`no API URL configured - run 'opschain config profiles add <name>' or set OPSCHAIN_API_URL`.
+`OPSCHAIN_API_URL` and the other environment variables (§3.3) still work without a profile.
 
 **Reducing repetition with profiles:**
 
-Once you have set `current_profile` in your config file (via `mintpress config profiles use dev`), you no longer need to pass `--profile` on every command. Once you have set `default_project` in that profile, you no longer need to pass `--project` on project-scoped commands.
+Once you have set `current_profile` in your config file (via `opschain config profiles use dev`), you no longer need to pass `--profile` on every command. Once you have set `default_project` in that profile, you no longer need to pass `--project` on project-scoped commands.
 
 ```bash
 # Without any profile configuration — must supply everything each time
-mintpress --profile dev environments list --project myproject
-mintpress --profile dev workflows list --project myproject
-mintpress --profile dev changes list --project myproject
+opschain --profile dev environments list --project myproject
+opschain --profile dev workflows list --project myproject
+opschain --profile dev changes list --project myproject
 
-# After: mintpress config profiles use dev
+# After: opschain config profiles use dev
 # (sets current_profile=dev in config file — profile flag no longer needed)
-mintpress environments list --project myproject
-mintpress workflows list --project myproject
+opschain environments list --project myproject
+opschain workflows list --project myproject
 
 # After also setting default_project=myproject in the dev profile:
-# (mintpress config profiles update dev --default-project myproject)
-mintpress environments list
-mintpress workflows list
-mintpress changes list
+# (opschain config profiles update dev --default-project myproject)
+opschain environments list
+opschain workflows list
+opschain changes list
 ```
 
 ### 3.3 Environment Variables
 
 Environment variables override the config file — useful in CI/CD pipelines where you don't want to store config files on build agents.
 
-**MintPress variables:**
+**OpsChain variables:**
 
 | Variable | Config equivalent | Description |
 |---|---|---|
-| `MINTPRESS_API_URL` | `api_url` | API base URL |
-| `MINTPRESS_USERNAME` | `username` | Username |
-| `MINTPRESS_PASSWORD` | `password` | Password |
-| `MINTPRESS_TOKEN` | `token` | Bearer token (takes precedence over username/password) |
-| `MINTPRESS_PROFILE` | — | Profile name to use |
-| `MINTPRESS_INSECURE` | `insecure` | `true` or `1` to skip TLS verification |
-| `MINTPRESS_TIMEOUT` | `timeout` | Timeout in seconds |
-| `MINTPRESS_DEFAULT_PROJECT` | `default_project` | Default project code |
+| `OPSCHAIN_API_URL` | `api_url` | API base URL |
+| `OPSCHAIN_USERNAME` | `username` | Username |
+| `OPSCHAIN_PASSWORD` | `password` | Password |
+| `OPSCHAIN_TOKEN` | `token` | Bearer token (takes precedence over username/password) |
+| `OPSCHAIN_PROFILE` | — | Profile name to use |
+| `OPSCHAIN_INSECURE` | `insecure` | `true` or `1` to skip TLS verification |
+| `OPSCHAIN_TIMEOUT` | `timeout` | Timeout in seconds |
+| `OPSCHAIN_DEFAULT_PROJECT` | `default_project` | Default project code |
 
-**opschain binary:** use `OPSCHAIN_` in place of `MINTPRESS_` (for example `OPSCHAIN_API_URL`, `OPSCHAIN_TOKEN`).
-
-`MINTPRESS_DEFAULT_PROJECT` is read by the `mintpress` binary only. The `mintpress` binary also accepts `OPSCHAIN_DEFAULT_PROJECT`, which wins if both are set; the `opschain` binary reads only `OPSCHAIN_DEFAULT_PROJECT`.
+**MintPress equivalents:** Replace `OPSCHAIN_` with `MINTPRESS_` (e.g. `MINTPRESS_API_URL`, `MINTPRESS_TOKEN`).
 
 **Precedence order (highest to lowest):**
 
 1. `--token` command-line flag
-2. Environment variables (`MINTPRESS_TOKEN`, `MINTPRESS_USERNAME`, `MINTPRESS_PASSWORD`, …)
+2. Environment variables (`OPSCHAIN_TOKEN`, `OPSCHAIN_USERNAME`, `OPSCHAIN_PASSWORD`, …)
 3. `--profile` / `-p` command-line flag
-4. `MINTPRESS_PROFILE` environment variable
+4. `OPSCHAIN_PROFILE` environment variable
 5. `current_profile` in config file
 
 **Auth method precedence:** When both a token and username/password are present (from any source), the bearer token is always used.
 
 ```bash
 # Config-file-free usage with basic auth
-export MINTPRESS_API_URL=https://dev.mintpress.example.com
-export MINTPRESS_USERNAME=alice
-export MINTPRESS_PASSWORD=s3cr3t
-mintpress projects list
+export OPSCHAIN_API_URL=https://dev.opschain.example.com
+export OPSCHAIN_USERNAME=alice
+export OPSCHAIN_PASSWORD=s3cr3t
+opschain projects list
 
 # Config-file-free usage with bearer token
-export MINTPRESS_API_URL=https://dev.mintpress.example.com
-export MINTPRESS_TOKEN=eyJhbGciOiJIUzI1NiJ9...
-mintpress projects list
+export OPSCHAIN_API_URL=https://dev.opschain.example.com
+export OPSCHAIN_TOKEN=eyJhbGciOiJIUzI1NiJ9...
+opschain projects list
 ```
 
 ### 3.4 Bearer Token Authentication
 
-MintPress supports bearer token authentication as an alternative to username/password. There are two token types:
+OpsChain supports bearer token authentication as an alternative to username/password. There are two token types:
 
 - **Access tokens** — short-lived (typically a few hours), obtained via `tokens login`
 - **API key tokens** — long-lived, created via `tokens create-api-key` for automation
@@ -436,28 +432,28 @@ environment variables alone.
 
 ```bash
 # Interactive — prompts for username and password
-mintpress tokens login
+opschain tokens login
 
 # Non-interactive — supply credentials via flags
-mintpress tokens login --username alice --password s3cr3t
+opschain tokens login --username alice --password s3cr3t
 
 # Non-interactive — supply credentials via environment variables
-MINTPRESS_USERNAME=alice MINTPRESS_PASSWORD=s3cr3t mintpress tokens login
+OPSCHAIN_USERNAME=alice OPSCHAIN_PASSWORD=s3cr3t opschain tokens login
 
 # Against a specific API URL (overrides the profile's URL)
-mintpress tokens login --api-url https://staging.mintpress.example.com
+opschain tokens login --api-url https://staging.opschain.example.com
 ```
 
 After a successful login, the token is written to the active profile's `token` field. If signing in could not give you secret vault access (for example, because your secret vault session has ended), the server's warning is printed to stderr as `Warning: <message>`, and the login still succeeds. With `-q`, `tokens login` prints only the new token's ID. You can confirm which auth method is being used with `--debug` (see §26).
 
-> **Token expiry:** Access tokens are short-lived (typically a few hours). Re-run `mintpress tokens login` when a token expires — you will get a 401 response if it has.
+> **Token expiry:** Access tokens are short-lived (typically a few hours). Re-run `opschain tokens login` when a token expires — you will get a 401 response if it has.
 
 #### `tokens logout` — revoke the current session
 
 Revokes the active access token via the API and clears it from the active profile. If the profile has no token (you authenticate with a username and password), it prints `Not logged in with a token - nothing to revoke` and revokes nothing.
 
 ```bash
-mintpress tokens logout
+opschain tokens logout
 ```
 
 #### `tokens list` — view all tokens
@@ -465,14 +461,14 @@ mintpress tokens logout
 Lists your tokens, sorted by expiry date (furthest expiry first). A superuser sees every user's tokens; the `OWNER` column shows whose each one is.
 
 ```bash
-mintpress tokens list
-mintpress tokens list --output json
+opschain tokens list
+opschain tokens list --output json
 ```
 
 #### `tokens get` — inspect a token
 
 ```bash
-mintpress tokens get <id>
+opschain tokens get <id>
 ```
 
 #### `tokens current` — show the active session token
@@ -480,7 +476,7 @@ mintpress tokens get <id>
 Shows the token currently being used for API calls.
 
 ```bash
-mintpress tokens current
+opschain tokens current
 ```
 
 If you authenticate with a username and password there is no current token. The server returns all of your access tokens instead, expired ones included, and the CLI lists them with a note on stderr.
@@ -488,7 +484,7 @@ If you authenticate with a username and password there is no current token. The 
 #### `tokens delete` — revoke a token by ID
 
 ```bash
-mintpress tokens delete <id>
+opschain tokens delete <id>
 ```
 
 #### `tokens delete-all` — revoke all tokens
@@ -497,10 +493,10 @@ Revokes every token you own. Prompts for confirmation unless `--force` is passed
 
 ```bash
 # Interactive confirmation
-mintpress tokens delete-all
+opschain tokens delete-all
 
 # Non-interactive (CI / scripts)
-mintpress tokens delete-all --force
+opschain tokens delete-all --force
 ```
 
 #### `tokens create-api-key` — create a long-lived API key
@@ -509,10 +505,10 @@ Creates an API key token for automation. The bearer token is printed once on cre
 
 ```bash
 # Uses the profile's credentials for auth
-mintpress tokens create-api-key --description "CI deploy token" --expiry-date 2026-12-31
+opschain tokens create-api-key --description "CI deploy token" --expiry-date 2026-12-31
 
 # Print only the new token's ID
-mintpress tokens create-api-key --description "CI deploy token" --expiry-date 2026-12-31 -q
+opschain tokens create-api-key --description "CI deploy token" --expiry-date 2026-12-31 -q
 ```
 
 | Flag | Required | Description |
@@ -527,7 +523,7 @@ username and password. With `--username` and `--password` the request authentica
 instead, even when the profile holds a token:
 
 ```bash
-mintpress tokens create-api-key --description "deploy bot" --expiry-date 2026-12-31 \
+opschain tokens create-api-key --description "deploy bot" --expiry-date 2026-12-31 \
   --username deploy-bot --password s3cr3t
 ```
 
@@ -544,14 +540,14 @@ secret vault credential registered - is printed to stderr. `-o json` and `-o yam
 When making any API call the CLI checks for credentials in this order and uses the first one it finds:
 
 1. `--token` command-line flag
-2. `MINTPRESS_TOKEN` environment variable
+2. `OPSCHAIN_TOKEN` environment variable
 3. `token` field in the active profile
-4. Basic auth: `MINTPRESS_USERNAME` / `MINTPRESS_PASSWORD` environment variables
+4. Basic auth: `OPSCHAIN_USERNAME` / `OPSCHAIN_PASSWORD` environment variables
 5. Basic auth: `username` / `password` fields in the active profile
 
 When the profile's saved token has expired and the profile also holds a username and password,
 the CLI logs in again, retries the request and saves the new token to the profile. A token
-passed with `--token` or `MINTPRESS_TOKEN` is never replaced this way: if it is expired or
+passed with `--token` or `OPSCHAIN_TOKEN` is never replaced this way: if it is expired or
 invalid, the command fails with `API error (401)` and the profile is left unchanged.
 
 ---
@@ -562,7 +558,7 @@ These flags are available on every command.
 
 | Flag | Short | Default | Description |
 |---|---|---|---|
-| `--config` | | `~/.mintpress/config.yaml` | Path to config file |
+| `--config` | | `~/.opschain/config.yaml` | Path to config file |
 | `--profile` | `-p` | (current_profile) | Connection profile to use |
 | `--token` | | — | Bearer token (overrides profile token and basic auth) |
 | `--output` | `-o` | `table` | Output format: `table`, `json`, `yaml` |
@@ -575,13 +571,13 @@ These flags are available on every command.
 
 ```bash
 # Default table output — human-readable
-mintpress projects list
+opschain projects list
 
 # JSON — full response, pipe to jq
-mintpress projects list -o json | jq '.[].attributes.name'
+opschain projects list -o json | jq '.[].attributes.name'
 
 # YAML — full response
-mintpress projects get myproject -o yaml
+opschain projects get myproject -o yaml
 ```
 
 `-o yaml` and `-o json` carry the same keys, in the same order, with the same types — the
@@ -602,16 +598,16 @@ For code-based resources — projects, environments, assets, agents, workflows a
 
 ```bash
 # Capture a list of all project codes
-PROJECTS=$(mintpress projects list -q)
+PROJECTS=$(opschain projects list -q)
 
 # Capture a newly-created change ID
-CHANGE_ID=$(mintpress changes create -E dev -A myasset -a deploy -q)
+CHANGE_ID=$(opschain changes create -E dev -A myasset -a deploy -q)
 echo "Created change: $CHANGE_ID"
 ```
 
 > **Note:** `--debug` output (HTTP logs) always goes to **stderr**. Normal output goes to **stdout**. You can redirect them independently:
 > ```bash
-> mintpress --debug projects list 2>debug.log
+> opschain --debug projects list 2>debug.log
 > ```
 
 ### Referring to a resource by code, name, or ID
@@ -619,9 +615,9 @@ echo "Created change: $CHANGE_ID"
 Every command that acts on one resource takes the resource's code, name, or ID as its positional argument — `get`, `update`, `delete`, and the subcommands that operate on a resource (`agents status`, `agents logs`, `assets actions`, `<resource> properties get`, and so on). The CLI works out which one you gave:
 
 ```bash
-mintpress projects get web-app             # by code
-mintpress projects get "Web App"           # by name
-mintpress projects get 7f3e9c2a-1b4d-...   # by ID
+opschain projects get web-app             # by code
+opschain projects get "Web App"           # by name
+opschain projects get 7f3e9c2a-1b4d-...   # by ID
 ```
 
 A bare argument is matched as a code first, then by ID, then by name. A code match takes a single request. A bare name or ID first misses as a code and then lists the resource,
@@ -630,9 +626,9 @@ which costs two extra calls; forcing it with `--name` or `--id` skips the miss.
 To force one interpretation, use a flag in place of the positional argument:
 
 ```bash
-mintpress projects get --code web-app      # a code only, no fallback
-mintpress projects get --name "Web App"    # a name only
-mintpress projects get --id 7f3e9c2a-...   # an ID only
+opschain projects get --code web-app      # a code only, no fallback
+opschain projects get --name "Web App"    # a name only
+opschain projects get --id 7f3e9c2a-...   # an ID only
 ```
 
 - On `update`, `--name` sets the new name, so it isn't a lookup flag there. Identify the resource to update by its code (positional) or `--id`.
@@ -645,11 +641,11 @@ mintpress projects get --id 7f3e9c2a-...   # an ID only
 `get` prints the full resource. Add `--uuid` to print just its server UUID (the JSON:API `id`) and nothing else — one line, ready to capture in a variable:
 
 ```bash
-mintpress projects get web-app --uuid
+opschain projects get web-app --uuid
 # 7f3e9c2a-1b4d-4c5e-8a9f-0123456789ab
 
-mintpress assets get myasset -P web-app -E dev --uuid
-mintpress git-remotes get github -P web-app --uuid
+opschain assets get myasset -P web-app -E dev --uuid
+opschain git-remotes get github -P web-app --uuid
 ```
 
 `--uuid` works on `get` for every resource you look up by code, name, or ID: projects, environments, assets, agents, workflows, git remotes, templates, agent templates, remote runner targets, and authorisation policies. It resolves the identifier the same way as a normal `get`, so you can combine it with `--code` / `--name` / `--id` (templates, agent templates and remote runner targets take `--code` / `--id` only). It overrides `-q` and `-o` — you always get the bare UUID.
@@ -657,8 +653,8 @@ mintpress git-remotes get github -P web-app --uuid
 This is the difference between the two: for a code-based resource, `get -q` prints the code, `get --uuid` prints the UUID.
 
 ```bash
-mintpress projects get web-app -q       # web-app
-mintpress projects get web-app --uuid   # 7f3e9c2a-1b4d-4c5e-8a9f-0123456789ab
+opschain projects get web-app -q       # web-app
+opschain projects get web-app --uuid   # 7f3e9c2a-1b4d-4c5e-8a9f-0123456789ab
 ```
 
 ### Save a whole list or log to a file
@@ -670,17 +666,17 @@ downloads without the CLI holding it in memory.
 
 ```bash
 # Every asset in an environment, as CSV
-mintpress assets list -P web-app -E dev --out-file assets.csv
+opschain assets list -P web-app -E dev --out-file assets.csv
 
 # A change's complete log, oldest line first
-mintpress changes logs b5bf89b6-6512-4f18-8b4d-cdac8a597231 --out-file change.log
+opschain changes logs b5bf89b6-6512-4f18-8b4d-cdac8a597231 --out-file change.log
 
 # Give a directory and the CLI names the file for you
-mintpress assets list -P web-app -E dev --out-file ./reports/
+opschain assets list -P web-app -E dev --out-file ./reports/
 # Assets written to reports/web-app_dev_assets.csv
 
 # Stream to stdout instead, for a pipe
-mintpress changes list -E dev --out-file - | grep error
+opschain changes list -E dev --out-file - | grep error
 ```
 
 These commands take `--out-file`:
@@ -724,39 +720,39 @@ How it behaves:
 
 ## 5. Projects
 
-Projects are the top-level organisational unit in MintPress. Everything else — environments, assets, workflows, git remotes — lives inside a project.
+Projects are the top-level organisational unit in OpsChain. Everything else — environments, assets, workflows, git remotes — lives inside a project.
 
 ### Commands
 
 ```bash
 # List all projects
-mintpress projects list
-mintpress projects list -o json
+opschain projects list
+opschain projects list -o json
 
 # Save every project to a CSV file (see §4 "Save a whole list or log to a file")
-mintpress projects list --out-file projects.csv
+opschain projects list --out-file projects.csv
 
 # Get a project by code, name, or ID (see §4 "Referring to a resource")
-mintpress projects get myproject
-mintpress projects get --id 7f3e9c2a-1b4d-...
-mintpress projects get myproject -o yaml
+opschain projects get myproject
+opschain projects get --id 7f3e9c2a-1b4d-...
+opschain projects get myproject -o yaml
 
 # Create a project
-mintpress projects create --code myproject --name "My Project" --description "Demo project"
-mintpress projects create --code quickproj   # name defaults to code
+opschain projects create --code myproject --name "My Project" --description "Demo project"
+opschain projects create --code quickproj   # name defaults to code
 
 # Update a project
-mintpress projects update myproject --name "New Name"
-mintpress projects update myproject --description "Updated description"
-mintpress projects update myproject --archived=true    # archive
-mintpress projects update myproject --archived=false   # unarchive
+opschain projects update myproject --name "New Name"
+opschain projects update myproject --description "Updated description"
+opschain projects update myproject --archived=true    # archive
+opschain projects update myproject --archived=false   # unarchive
 
 # Delete a project
-mintpress projects delete myproject
-mintpress projects delete myproject -q   # prints deleted code
+opschain projects delete myproject
+opschain projects delete myproject -q   # prints deleted code
 
 # Force-delete the project and all its children, bypassing all in-use checks (superuser policy only)
-mintpress projects delete myproject --ignore-in-use
+opschain projects delete myproject --ignore-in-use
 ```
 
 **Create flags:**
@@ -781,24 +777,24 @@ Properties are versioned key-value data attached to a project.
 
 ```bash
 # Get current (latest) properties
-mintpress projects properties get myproject
+opschain projects properties get myproject
 
 # Get a specific version
-mintpress projects properties get myproject --version 3
+opschain projects properties get myproject --version 3
 
 # Update properties inline
-mintpress projects properties update myproject --data '{"db_host": "prod-db.internal"}'
+opschain projects properties update myproject --data '{"db_host": "prod-db.internal"}'
 
 # Update from a JSON file
-mintpress projects properties update myproject --from-file properties.json
+opschain projects properties update myproject --from-file properties.json
 
 # List all versions (newest first)
-mintpress projects properties versions myproject
-mintpress projects properties versions myproject --limit 20
-mintpress projects properties versions myproject -o json --exclude-data
+opschain projects properties versions myproject
+opschain projects properties versions myproject --limit 20
+opschain projects properties versions myproject -o json --exclude-data
 
 # Store a local file as a file property
-mintpress projects properties store-file myproject --file ./cert.pem --file-path certs/cert.pem
+opschain projects properties store-file myproject --file ./cert.pem --file-path certs/cert.pem
 ```
 
 Every `update` creates a new version. By default the write is unconditional — it applies over whatever the current version is. Pass `--version <n>` with the version you read to turn it into a concurrency guard: the write applies only if the current version still matches `<n>`, and is rejected if someone else changed the properties in the meantime. Get the current version from `properties get` or `properties versions`. This applies to settings too.
@@ -815,9 +811,9 @@ runs. It works the same way at every node level — see [§22 File properties](#
 Settings work identically to properties but use a different API endpoint.
 
 ```bash
-mintpress projects settings get myproject
-mintpress projects settings update myproject --data '{"log_level": "info"}'
-mintpress projects settings versions myproject
+opschain projects settings get myproject
+opschain projects settings update myproject --data '{"log_level": "info"}'
+opschain projects settings versions myproject
 ```
 
 Environments, assets and agents have the same commands with the same flags: `properties get`,
@@ -825,16 +821,16 @@ Environments, assets and agents have the same commands with the same flags: `pro
 name the node differs; the sections for each show it.
 
 These show what is set *on* the project. For the merged result — repository properties plus the
-project's own — use `mintpress projects converged-properties myproject` or
+project's own — use `opschain projects converged-properties myproject` or
 `converged-settings`; see [§21](#21-converged-properties-and-settings).
 
 ---
 
 ## 6. Git Remotes
 
-Git remotes define where MintPress fetches your code from. They are scoped to a project.
+Git remotes define where OpsChain fetches your code from. They are scoped to a project.
 
-MintPress fetches each remote periodically to keep its cache warm. Set `--periodic-fetch-interval` to control how often for a single remote; without it, the remote inherits the project/global `git_remote.periodic_fetch_interval` setting. `list` and `get` show the interval in a `FETCH` column — `default` means the remote is inheriting, and `list` prints the inherited value to stderr.
+OpsChain fetches each remote periodically to keep its cache warm. Set `--periodic-fetch-interval` to control how often for a single remote; without it, the remote inherits the project/global `git_remote.periodic_fetch_interval` setting. `list` and `get` show the interval in a `FETCH` column — `default` means the remote is inheriting, and `list` prints the inherited value to stderr.
 
 ### Commands
 
@@ -842,43 +838,43 @@ MintPress fetches each remote periodically to keep its cache warm. Set `--period
 
 ```bash
 # List all git remotes in a project
-mintpress git-remotes list
+opschain git-remotes list
 
 # Get a remote by name or ID (git remotes have no code)
-mintpress git-remotes get github
-mintpress git-remotes get --id abc123
-mintpress git-remotes get --name github
+opschain git-remotes get github
+opschain git-remotes get --id abc123
+opschain git-remotes get --name github
 
 # Create a remote with HTTPS authentication
-mintpress git-remotes create \
+opschain git-remotes create \
   --name github \
   --url https://github.com/acme/infra.git \
   --user gituser \
   --password ghp_token
 
 # Create a remote with a separate public URL (shown in the UI and change details)
-mintpress git-remotes create \
+opschain git-remotes create \
   --name github \
   --url git@github.com:acme/infra.git \
   --public-url https://github.com/acme/infra \
-  --ssh-key-file ~/.ssh/mintpress_rsa
+  --ssh-key-file ~/.ssh/opschain_rsa
 
 # Create a remote with SSH key (and optional passphrase)
-mintpress git-remotes create \
+opschain git-remotes create \
   --name github-ssh \
   --url git@github.com:acme/infra.git \
-  --ssh-key-file ~/.ssh/mintpress_rsa \
+  --ssh-key-file ~/.ssh/opschain_rsa \
   --passphrase 's3cr3t'
 
 # Register the SSH host key in the global known_hosts on create (superuser only)
-mintpress git-remotes create \
+opschain git-remotes create \
   --name github-ssh \
   --url git@github.com:acme/infra.git \
-  --ssh-key-file ~/.ssh/mintpress_rsa \
+  --ssh-key-file ~/.ssh/opschain_rsa \
   --add-known-host
 
 # Create a remote fetched every 5 minutes instead of on the inherited interval
-mintpress git-remotes create \
+opschain git-remotes create \
   --name github \
   --url https://github.com/acme/infra.git \
   --user gituser \
@@ -886,21 +882,21 @@ mintpress git-remotes create \
   --periodic-fetch-interval 300
 
 # Update credentials (name is immutable; url and public-url can be changed)
-mintpress git-remotes update github --password new_token
-mintpress git-remotes update github --ssh-key-file ~/.ssh/new_key --passphrase 's3cr3t'
-mintpress git-remotes update github --url git@github.com:acme/infra.git --add-known-host
-mintpress git-remotes update github --public-url https://github.com/acme/infra
+opschain git-remotes update github --password new_token
+opschain git-remotes update github --ssh-key-file ~/.ssh/new_key --passphrase 's3cr3t'
+opschain git-remotes update github --url git@github.com:acme/infra.git --add-known-host
+opschain git-remotes update github --public-url https://github.com/acme/infra
 
 # Change the fetch interval, then go back to the inherited default
-mintpress git-remotes update github --periodic-fetch-interval 900
-mintpress git-remotes update github --periodic-fetch-interval 0
+opschain git-remotes update github --periodic-fetch-interval 900
+opschain git-remotes update github --periodic-fetch-interval 0
 
 # Archive a remote (soft-delete)
-mintpress git-remotes archive github
-mintpress git-remotes archive github --archive=false  # unarchive
+opschain git-remotes archive github
+opschain git-remotes archive github --archive=false  # unarchive
 
 # Delete a remote permanently
-mintpress git-remotes delete github
+opschain git-remotes delete github
 ```
 
 **Create flags:**
@@ -948,53 +944,53 @@ Environments (e.g. `dev`, `staging`, `prod`) are scoped inside a project and pro
 
 ```bash
 # List environments in a project
-mintpress environments list
+opschain environments list
 
 # Save them all to a CSV file
-mintpress environments list -P myproject --out-file environments.csv
+opschain environments list -P myproject --out-file environments.csv
 
 # Get by code, name, or ID (see §4 "Referring to a resource")
-mintpress environments get dev
-mintpress environments get --code dev
-mintpress environments get --id abc-uuid
+opschain environments get dev
+opschain environments get --code dev
+opschain environments get --id abc-uuid
 
 # Create an environment
-mintpress environments create --code dev --name "Development"
-mintpress environments create \
+opschain environments create --code dev --name "Development"
+opschain environments create \
   --code staging \
   --name "Staging" \
   --description "Pre-production environment"
 
 # Update name or description
-mintpress environments update dev --name "Dev (updated)"
-mintpress environments update dev --description "New description"
+opschain environments update dev --name "Dev (updated)"
+opschain environments update dev --description "New description"
 
 # Archive or unarchive
-mintpress environments update dev --archived=true
-mintpress environments update dev --archived=false
+opschain environments update dev --archived=true
+opschain environments update dev --archived=false
 
 # Delete an environment
-mintpress environments delete dev
+opschain environments delete dev
 
 # Force-delete the environment and all its children, bypassing all in-use checks (superuser policy only)
-mintpress environments delete dev --ignore-in-use
+opschain environments delete dev --ignore-in-use
 ```
 
 ### Environment properties and settings
 
 ```bash
-mintpress environments properties get dev
-mintpress environments properties update dev \
+opschain environments properties get dev
+opschain environments properties update dev \
   --data '{"region": "us-east-1", "cluster": "k8s-prod"}'
-mintpress environments properties versions dev
+opschain environments properties versions dev
 
-mintpress environments settings get staging
-mintpress environments settings update staging --from-file settings.json
-mintpress environments settings versions staging
+opschain environments settings get staging
+opschain environments settings update staging --from-file settings.json
+opschain environments settings versions staging
 ```
 
 These show what is set *on* the environment. For the merged result — repository and project values
-included — use `mintpress environments converged-properties dev -P myproject` or
+included — use `opschain environments converged-properties dev -P myproject` or
 `converged-settings`; see [§21](#21-converged-properties-and-settings).
 
 ### Clone an environment
@@ -1005,17 +1001,17 @@ existing environment in the same project. When the target doesn't exist, the clo
 
 ```bash
 # Preview a new uat environment built from dev, with every asset
-mintpress environments clone dev uat -P myproject --name "UAT" \
+opschain environments clone dev uat -P myproject --name "UAT" \
   --properties replace --settings replace \
   --assets '*' --asset-properties replace --asset-settings replace --dry-run
 
 # Run the same clone
-mintpress environments clone dev uat -P myproject --name "UAT" \
+opschain environments clone dev uat -P myproject --name "UAT" \
   --properties replace --settings replace \
   --assets '*' --asset-properties replace --asset-settings replace
 
 # Merge dev's properties into test, and add two assets, updating them if test already has them
-mintpress environments clone dev test -P myproject --properties merge \
+opschain environments clone dev test -P myproject --properties merge \
   --assets web,db --existing update --asset-properties merge
 ```
 
@@ -1074,7 +1070,7 @@ written.
 
 ## 8. Asset Templates
 
-Asset templates define the available asset types in MintPress. Each template has a `code`, `name`, `template_type`, and is associated with a git remote.
+Asset templates define the available asset types in OpsChain. Each template has a `code`, `name`, `template_type`, and is associated with a git remote.
 
 > **Note:** Commands in this section require a project code. Either pass `--project <code>` / `-P <code>` on each command, or set `default_project` in your active profile (see §3.1) to omit it entirely.
 
@@ -1082,32 +1078,32 @@ Asset templates define the available asset types in MintPress. Each template has
 
 ```bash
 # List all available templates
-mintpress templates list
+opschain templates list
 
 # List/get with archived nodes excluded from each template's nodes relationship
-mintpress templates list --exclude-archived-nodes
-mintpress templates get my-template-code --exclude-archived-nodes
+opschain templates list --exclude-archived-nodes
+opschain templates get my-template-code --exclude-archived-nodes
 
 # Get a template by code, name, or ID (or force with --code / --id — see §4)
-mintpress templates get my-template-code
-mintpress templates get --id 7f3e9c2a-...
-mintpress templates get my-template-code -o json
+opschain templates get my-template-code
+opschain templates get --id 7f3e9c2a-...
+opschain templates get my-template-code -o json
 
 # Create a template backed by a git remote
-mintpress templates create -P myproject --code app --name "Application" --git-remote github
+opschain templates create -P myproject --code app --name "Application" --git-remote github
 
 # Rename it, repoint it, or disable it
-mintpress templates update app -P myproject --name "App Server"
-mintpress templates update app -P myproject --git-remote github-mirror
-mintpress templates update app -P myproject --disabled=true
+opschain templates update app -P myproject --name "App Server"
+opschain templates update app -P myproject --git-remote github-mirror
+opschain templates update app -P myproject --disabled=true
 
 # Archive a template (hidden and unusable, but recoverable with unarchive)
-mintpress templates archive my-template-code
-mintpress templates unarchive my-template-code
+opschain templates archive my-template-code
+opschain templates unarchive my-template-code
 
 # Permanently delete a template (no recovery)
-mintpress templates delete my-template-code
-mintpress templates delete --id 7f3e9c2a-...
+opschain templates delete my-template-code
+opschain templates delete --id 7f3e9c2a-...
 ```
 
 > **Note:** `--exclude-archived-nodes` (on `list` and `get`) filters archived *nodes* out of
@@ -1124,34 +1120,34 @@ Each template has versions, and every version pins a git revision (branch, tag, 
 
 ```bash
 # Version history for a template
-mintpress templates versions list "Application" -P myproject
+opschain templates versions list "Application" -P myproject
 
 # Read one version
-mintpress templates versions get "Application" v1.0 -P myproject
+opschain templates versions get "Application" v1.0 -P myproject
 
 # Pin a new version to a git revision
-mintpress templates versions create "Application" v1.1 -P myproject --git-rev main
+opschain templates versions create "Application" v1.1 -P myproject --git-rev main
 
 # Change a version's revision or description
-mintpress templates versions update "Application" v1.1 -P myproject --git-rev release
+opschain templates versions update "Application" v1.1 -P myproject --git-rev release
 
 # Track a branch: refresh the version whenever it gets a new commit
-mintpress templates versions create latest -P myproject --code app --git-rev main --float-git-rev
-mintpress templates versions update latest -P myproject --code app --git-rev main --float-git-rev=false
+opschain templates versions create latest -P myproject --code app --git-rev main --float-git-rev
+opschain templates versions update latest -P myproject --code app --git-rev main --float-git-rev=false
 
 # Archive/unarchive a version (hidden but recoverable)
-mintpress templates versions archive "Application" v1.0 -P myproject
-mintpress templates versions unarchive "Application" v1.0 -P myproject
+opschain templates versions archive "Application" v1.0 -P myproject
+opschain templates versions unarchive "Application" v1.0 -P myproject
 
 # Lock/unlock a version against changes to its pinned revision
-mintpress templates versions lock "Application" v1.0 -P myproject
-mintpress templates versions unlock "Application" v1.0 -P myproject
+opschain templates versions lock "Application" v1.0 -P myproject
+opschain templates versions unlock "Application" v1.0 -P myproject
 
 # Unlock a version that assets are using (a plain unlock refuses)
-mintpress templates versions unlock "Application" v1.0 -P myproject --ignore-in-use
+opschain templates versions unlock "Application" v1.0 -P myproject --ignore-in-use
 
 # Delete a version (archived instead if an asset has used it)
-mintpress templates versions delete "Application" v1.0 -P myproject
+opschain templates versions delete "Application" v1.0 -P myproject
 ```
 
 #### Delete a version
@@ -1191,17 +1187,17 @@ set both. To lock a version that floats, run
 If a float refresh fails, the reason is in `float_refresh_error`:
 
 ```bash
-mintpress templates versions get "Application" latest -P myproject -o json | grep float_refresh_error
+opschain templates versions get "Application" latest -P myproject -o json | grep float_refresh_error
 ```
 
 When you create or update a version with `--fetch-revision`, the server resolves the git revision to a commit SHA in the background — a *refresh*. To cancel a refresh that has stalled or that you started by mistake, use `cancel-refresh`:
 
 ```bash
 # Cancel an in-progress git SHA refresh for version v1.0
-mintpress templates versions cancel-refresh "Application" v1.0 -P myproject
+opschain templates versions cancel-refresh "Application" v1.0 -P myproject
 
 # By template code
-mintpress templates versions cancel-refresh v1.0 --code app -P myproject
+opschain templates versions cancel-refresh v1.0 --code app -P myproject
 ```
 
 If the version had a previously resolved commit, that commit is restored. Otherwise the version is left in the `broken` state, and you can refresh it again later. If no refresh is in progress, the command reports `No SHA refresh is in progress for this template version`.
@@ -1210,8 +1206,8 @@ If the version had a previously resolved commit, that commit is restored. Otherw
 
 ```bash
 # See the template and version that a specific asset is using
-mintpress assets template get myasset
-mintpress assets template get myasset -E dev
+opschain assets template get myasset
+opschain assets template get myasset -E dev
 ```
 
 ### Assign a template version to an asset
@@ -1220,17 +1216,17 @@ Move an asset to a different version of the template it already uses:
 
 ```bash
 # Assign version v1.3 to myasset
-mintpress assets template assign myasset --template-version v1.3
+opschain assets template assign myasset --template-version v1.3
 
 # Same, for an environment-scoped asset
-mintpress assets template assign myasset --template-version v1.3 -E dev
+opschain assets template assign myasset --template-version v1.3 -E dev
 ```
 
 The asset keeps whichever template it was created with; only the version changes. The template is read from the asset automatically, so you name the asset and the version — nothing else. Look the asset up by code, name, or ID (see §4).
 
-`--template-version` is required. If the asset has no template assigned, the command reports `asset '<code>' has no template assigned` and makes no change.
+To assign a version to many assets at once, or to move an asset onto a different template, use the template-centric `templates assign <template> <version> --assets <codes>` command.
 
-To assign a version to many assets at once, use the template-centric `templates assign <template> <version> --assets <codes>` command. It too moves assets between versions of the same template; it cannot move an asset onto a different template. `templates assign` assigns each asset on its own: assets that are missing or archived, are not sourced from that template, or that you cannot update are listed on stderr and keep their existing version, the rest are assigned, and the command exits non-zero when any asset was not assigned.
+`--template-version` is required. If the asset has no template assigned, the command reports `asset '<code>' has no template assigned` and makes no change.
 
 ---
 
@@ -1244,30 +1240,30 @@ Assets are instances of templates — a service, database, configuration target,
 
 ```bash
 # List assets in a project
-mintpress assets list
+opschain assets list
 
 # List assets scoped to a specific environment
-mintpress assets list -E dev
+opschain assets list -E dev
 
 # Save every asset in the environment to a CSV file
-mintpress assets list -E dev --out-file assets.csv
+opschain assets list -E dev --out-file assets.csv
 
 # Get an asset by code, name, or ID (see §4 "Referring to a resource")
-mintpress assets get myasset
-mintpress assets get --id 9b0c176c-... -E dev
-mintpress assets get myasset -E dev
+opschain assets get myasset
+opschain assets get --id 9b0c176c-... -E dev
+opschain assets get myasset -E dev
 
 # List the actions you can run against an asset — use these as --action values for changes create/execute
-mintpress assets actions myasset
-mintpress assets actions myasset -E dev
-mintpress assets actions myasset -o json   # full per-action detail (full_path, stage_step, ...)
+opschain assets actions myasset
+opschain assets actions myasset -E dev
+opschain assets actions myasset -o json   # full per-action detail (full_path, stage_step, ...)
 
 # Expand every action's nested step tree (all levels)
-mintpress assets actions myasset --tree
-mintpress assets actions myasset --tree -q  # one runnable code per line, every node
+opschain assets actions myasset --tree
+opschain assets actions myasset --tree -q  # one runnable code per line, every node
 
 # Create an asset
-mintpress assets create \
+opschain assets create \
   --code myasset \
   --name "My Application" \
   --description "The main application server" \
@@ -1275,7 +1271,7 @@ mintpress assets create \
   --template-version v1.2
 
 # Create an environment-scoped asset
-mintpress assets create -E dev \
+opschain assets create -E dev \
   --code myasset \
   --name "My Application (Dev)" \
   --description "Dev instance" \
@@ -1283,15 +1279,15 @@ mintpress assets create -E dev \
   --template-version v1.2
 
 # Update an asset
-mintpress assets update myasset --name "New Name"
-mintpress assets update myasset --description "Updated description"
-mintpress assets update myasset --archived=true   # archive
+opschain assets update myasset --name "New Name"
+opschain assets update myasset --description "Updated description"
+opschain assets update myasset --archived=true   # archive
 
 # Delete an asset
-mintpress assets delete myasset
+opschain assets delete myasset
 
 # Force-delete, bypassing in-use checks (superuser only)
-mintpress assets delete myasset --ignore-in-use
+opschain assets delete myasset --ignore-in-use
 ```
 
 `assets get <code> -o json` includes `mintmodel_valid` and, when it is `false`,
@@ -1301,7 +1297,7 @@ Both come from the single-asset response; `assets list` doesn't return them.
 
 ### Viewing an action's steps
 
-`mintpress assets actions myasset` lists the top-level actions. An action is usually built from
+`opschain assets actions myasset` lists the top-level actions. An action is usually built from
 nested steps, and those steps often have steps of their own. Add `--tree` to expand the whole
 structure:
 
@@ -1327,21 +1323,21 @@ prints one code per line for every node, ready to pipe into a change.
 ### Asset properties and settings
 
 ```bash
-mintpress assets properties get myasset
-mintpress assets properties update myasset \
+opschain assets properties get myasset
+opschain assets properties update myasset \
   --data '{"replicas": 3, "image_tag": "v2.1.0"}'
-mintpress assets properties versions myasset -E dev
+opschain assets properties versions myasset -E dev
 
-mintpress assets settings get myasset -E dev
-mintpress assets settings update myasset -E dev --data '{"log_level": "debug"}'
-mintpress assets settings versions myasset -E dev --limit 5
+opschain assets settings get myasset -E dev
+opschain assets settings update myasset -E dev --data '{"log_level": "debug"}'
+opschain assets settings versions myasset -E dev --limit 5
 ```
 
 Give `-E` for an asset in an environment, and leave it out for a project-level asset.
 
 These show what is set *on* the asset. For the values an action will actually run with — the
 template, project, environment and asset layers merged — use
-`mintpress assets converged-properties myasset -P myproject -E dev` or `converged-settings`; see
+`opschain assets converged-properties myasset -P myproject -E dev` or `converged-settings`; see
 [§21](#21-converged-properties-and-settings).
 
 ### Clone an asset
@@ -1351,18 +1347,18 @@ project. The source and target can be in different environments, or at the proje
 
 ```bash
 # Preview copying dev's web asset into uat, keeping the code
-mintpress assets clone web -P myproject -E dev --target-environment uat \
+opschain assets clone web -P myproject -E dev --target-environment uat \
   --name "Web" --properties replace --settings replace --dry-run
 
 # Clone a project-level asset into an environment
-mintpress assets clone web -P myproject --target-environment dev \
+opschain assets clone web -P myproject --target-environment dev \
   --name "Web" --properties replace --settings replace
 
 # Merge an asset's properties into another asset in the same environment
-mintpress assets clone web web2 -P myproject -E dev --properties merge
+opschain assets clone web web2 -P myproject -E dev --properties merge
 
 # Copy an environment's asset up to the project level
-mintpress assets clone web -P myproject -E dev --target-environment "" \
+opschain assets clone web -P myproject -E dev --target-environment "" \
   --name "Web" --properties replace
 ```
 
@@ -1382,33 +1378,33 @@ on stderr.
 
 ### Generate Actions
 
-When MintPress needs to discover what actions a template exposes, it builds the container image and queries it. This is managed via generate-actions requests.
+When OpsChain needs to discover what actions a template exposes, it builds the container image and queries it. This is managed via generate-actions requests.
 
 ```bash
 # Trigger action generation for an asset
-mintpress assets generate-actions create myasset
-mintpress assets generate-actions create myasset -E dev
+opschain assets generate-actions create myasset
+opschain assets generate-actions create myasset -E dev
 
 # Rebuild the asset's image without the build cache
-mintpress assets generate-actions create myasset --build-without-cache
+opschain assets generate-actions create myasset --build-without-cache
 
 # List all generation requests for an asset
-mintpress assets generate-actions list myasset
-mintpress assets generate-actions list myasset --limit 20   # newest 20 (server default: 100)
+opschain assets generate-actions list myasset
+opschain assets generate-actions list myasset --limit 20   # newest 20 (server default: 100)
 
 # Get status of a specific request
-mintpress assets generate-actions get myasset <request-id>
+opschain assets generate-actions get myasset <request-id>
 
 # View logs from a generation request
 # Table columns: TIMESTAMP, CATEGORY, MESSAGE. JSON output includes
 # category and logged_at (plus template_version_history_id, node_background_task_id).
-mintpress assets generate-actions logs <request-id>
-mintpress assets generate-actions logs <request-id> -o json
-mintpress assets generate-actions logs <request-id> --limit 100
-mintpress assets generate-actions logs <request-id> --out-file generate.log   # whole log
+opschain assets generate-actions logs <request-id>
+opschain assets generate-actions logs <request-id> -o json
+opschain assets generate-actions logs <request-id> --limit 100
+opschain assets generate-actions logs <request-id> --out-file generate.log   # whole log
 
 # Cancel a running generation request
-mintpress assets generate-actions cancel myasset <request-id>
+opschain assets generate-actions cancel myasset <request-id>
 ```
 
 Without `--limit`, `logs` returns up to 10000 lines.
@@ -1421,28 +1417,28 @@ MintModels are snapshots of an asset's computed model data at a point in time.
 
 ```bash
 # List all MintModels for an asset (newest first)
-mintpress assets mintmodels list myasset
-mintpress assets mintmodels list myasset -E dev
-mintpress assets mintmodels list myasset --limit 5    # five most recent
-mintpress assets mintmodels list myasset --template-version 2023_Q4_2
+opschain assets mintmodels list myasset
+opschain assets mintmodels list myasset -E dev
+opschain assets mintmodels list myasset --limit 5    # five most recent
+opschain assets mintmodels list myasset --template-version 2023_Q4_2
 
 # Get the latest MintModel (no ID required)
-mintpress assets mintmodels get myasset
-mintpress assets mintmodels get myasset -E dev
+opschain assets mintmodels get myasset
+opschain assets mintmodels get myasset -E dev
 
 # Get a specific MintModel by ID
-mintpress assets mintmodels get myasset <mintmodel-id>
+opschain assets mintmodels get myasset <mintmodel-id>
 
 # Download the MintModel data to a JSON file
-mintpress assets mintmodels get myasset --out-file mintmodel.json
-mintpress assets mintmodels get myasset -E dev --out-file /tmp/mintmodel.json
+opschain assets mintmodels get myasset --out-file mintmodel.json
+opschain assets mintmodels get myasset -E dev --out-file /tmp/mintmodel.json
 
 # Generate a new MintModel for an asset (queues the work, returns the task)
-mintpress assets mintmodels generate myasset
-mintpress assets mintmodels generate myasset -E dev
+opschain assets mintmodels generate myasset
+opschain assets mintmodels generate myasset -E dev
 
 # Generate and wait for the result, then print the new MintModel
-mintpress assets mintmodels generate myasset --wait
+opschain assets mintmodels generate myasset --wait
 ```
 
 `list` returns newest first, up to the server's limit of 100. `--limit` caps it lower — `--limit 5` for the five most recent.
@@ -1451,13 +1447,13 @@ mintpress assets mintmodels generate myasset --wait
 
 The `--out-file` flag writes the MintModel's JSON payload to a file, pretty-printed, with key ordering preserved as returned by the API. The confirmation message is written to stderr and can be suppressed with `-q`.
 
-Generation runs asynchronously. `generate` queues the work and prints the background task (its ID and status) straight away; the MintModel isn't ready yet. Add `--wait` to poll the task every 5 seconds until it finishes and then print the generated MintModel — status transitions are written to stderr. If the task ends in `error` or `cancelled`, the command reports the failure and exits non-zero. Without `--wait`, run `mintpress assets mintmodels get myasset` once the task completes to fetch the result.
+Generation runs asynchronously. `generate` queues the work and prints the background task (its ID and status) straight away; the MintModel isn't ready yet. Add `--wait` to poll the task every 5 seconds until it finishes and then print the generated MintModel — status transitions are written to stderr. If the task ends in `error` or `cancelled`, the command reports the failure and exits non-zero. Without `--wait`, run `opschain assets mintmodels get myasset` once the task completes to fetch the result.
 
 ---
 
 ## 10. Agents
 
-Agents are containerised execution environments that run MintPress actions. Each agent is built from a template and can be independently started, stopped, and rebuilt.
+Agents are containerised execution environments that run OpsChain actions. Each agent is built from a template and can be independently started, stopped, and rebuilt.
 
 > **Note:** All agent commands require `--project` / `-P`. Agents belong to a project, not to an environment, so the agent commands have no `-E` flag.
 
@@ -1465,31 +1461,31 @@ Agents are containerised execution environments that run MintPress actions. Each
 
 ```bash
 # List agents in a project
-mintpress agents list -P myproject
+opschain agents list -P myproject
 
 # Save them to a CSV file
-mintpress agents list -P myproject --out-file agents.csv
+opschain agents list -P myproject --out-file agents.csv
 
 # Get an agent by code, name, or ID (see §4 "Referring to a resource")
-mintpress agents get myagent -P myproject
-mintpress agents get --id <uuid> -P myproject
+opschain agents get myagent -P myproject
+opschain agents get --id <uuid> -P myproject
 
 # Create an agent from a template
-mintpress agents create -P myproject \
+opschain agents create -P myproject \
   --code myagent \
   --name "My Agent" \
   --template-code agent-template \
   --template-version v1.0
 
 # Update an agent
-mintpress agents update myagent -P myproject --name "New Name"
-mintpress agents update myagent -P myproject --archived=true
+opschain agents update myagent -P myproject --name "New Name"
+opschain agents update myagent -P myproject --archived=true
 
 # See the template and version an agent is built from
-mintpress agents template get myagent -P myproject
+opschain agents template get myagent -P myproject
 
 # Delete an agent
-mintpress agents delete myagent -P myproject
+opschain agents delete myagent -P myproject
 ```
 
 ### 10.2 Building the container image
@@ -1498,10 +1494,10 @@ Before an agent can run, its container image must be built. Building is async �
 
 ```bash
 # Trigger an image build
-mintpress agents build myagent -P myproject
+opschain agents build myagent -P myproject
 
 # Check build status
-mintpress agents status myagent -P myproject
+opschain agents status myagent -P myproject
 ```
 
 The build task response includes a task ID. Use `--output json` to see full task details including `status_code` (`initializing`, `running`, `success`, `error`, `cancelled`).
@@ -1512,16 +1508,16 @@ Once an image is built, use `start` and `stop` to control the agent's runtime st
 
 ```bash
 # Start the agent
-mintpress agents start myagent -P myproject
+opschain agents start myagent -P myproject
 
 # Stop the agent
-mintpress agents stop myagent -P myproject
+opschain agents stop myagent -P myproject
 
 # Wait until the agent is fully running before returning
-mintpress agents start myagent -P myproject --wait
+opschain agents start myagent -P myproject --wait
 
 # Wait until the agent has fully stopped
-mintpress agents stop myagent -P myproject --wait
+opschain agents stop myagent -P myproject --wait
 ```
 
 With `--wait`, the CLI polls every 5 seconds and prints the current status to stderr until the agent reaches the target state. Useful in scripts or pipelines where subsequent steps depend on the agent being up or down.
@@ -1530,7 +1526,7 @@ With `--wait`, the CLI polls every 5 seconds and prints the current status to st
 
 ```bash
 # Show current and desired status, image SHAs, and build status
-mintpress agents status myagent -P myproject
+opschain agents status myagent -P myproject
 ```
 
 If the agent has failed, the table is followed by `Note: the agent failed: <reason>` on stderr.
@@ -1540,17 +1536,17 @@ If the agent has failed, the table is followed by `Note: the agent failed: <reas
 
 ```bash
 # Last 50 log lines (default)
-mintpress agents logs myagent -P myproject
+opschain agents logs myagent -P myproject
 
 # Adjust the number of lines returned
-mintpress agents logs myagent -P myproject --limit 100
-mintpress agents logs myagent -P myproject -l 200
+opschain agents logs myagent -P myproject --limit 100
+opschain agents logs myagent -P myproject -l 200
 
 # Retrieve all log lines
-mintpress agents logs myagent -P myproject --all
+opschain agents logs myagent -P myproject --all
 
 # Save the whole log to a file
-mintpress agents logs myagent -P myproject --out-file agent.log
+opschain agents logs myagent -P myproject --out-file agent.log
 ```
 
 `--all` overrides `--limit` and returns the complete log history for the agent. For a long
@@ -1564,14 +1560,14 @@ image not yet built) has no events: the list is empty and a note on stderr says 
 
 ```bash
 # Last 50 events (default), newest first
-mintpress agents k8s-events myagent -P myproject
+opschain agents k8s-events myagent -P myproject
 
 # Adjust the number of events returned
-mintpress agents k8s-events myagent -P myproject --limit 20
-mintpress agents k8s-events myagent -P myproject -l 100
+opschain agents k8s-events myagent -P myproject --limit 20
+opschain agents k8s-events myagent -P myproject -l 100
 
 # Retrieve all events
-mintpress agents k8s-events myagent -P myproject --all
+opschain agents k8s-events myagent -P myproject --all
 ```
 
 `--all` overrides `--limit` and returns the complete Kubernetes event history for the agent.
@@ -1579,15 +1575,15 @@ mintpress agents k8s-events myagent -P myproject --all
 ### 10.7 Properties and settings
 
 ```bash
-mintpress agents properties get myagent -P myproject
-mintpress agents properties update myagent -P myproject \
+opschain agents properties get myagent -P myproject
+opschain agents properties update myagent -P myproject \
   --data '{"key": "value"}' --version 1
 
-mintpress agents properties versions myagent -P myproject
+opschain agents properties versions myagent -P myproject
 
-mintpress agents settings get myagent -P myproject
-mintpress agents settings update myagent -P myproject --from-file settings.json
-mintpress agents settings versions myagent -P myproject
+opschain agents settings get myagent -P myproject
+opschain agents settings update myagent -P myproject --from-file settings.json
+opschain agents settings versions myagent -P myproject
 ```
 
 ### 10.8 Converged properties and settings
@@ -1598,16 +1594,16 @@ combine the global, project, and agent settings, and list only those that differ
 
 ```bash
 # Current merged properties
-mintpress agents converged-properties myagent -P myproject --output json
+opschain agents converged-properties myagent -P myproject --output json
 
 # Merged settings
-mintpress agents converged-settings myagent -P myproject --output json
+opschain agents converged-settings myagent -P myproject --output json
 
 # Where did each value come from?
-mintpress agents converged-properties myagent -P myproject --show-sources
+opschain agents converged-properties myagent -P myproject --show-sources
 
 # Properties as they would have been at a specific point in time
-mintpress agents converged-properties myagent -P myproject \
+opschain agents converged-properties myagent -P myproject \
   --converge-date 2026-04-01T00:00:00+00:00 \
   --output yaml
 ```
@@ -1626,11 +1622,11 @@ subcommands as `templates` — `list`, `get`, `create`, `update`, `archive`, `un
 templates.
 
 ```bash
-mintpress agent-templates list -P myproject
-mintpress agent-templates get my-agent-template -P myproject
+opschain agent-templates list -P myproject
+opschain agent-templates get my-agent-template -P myproject
 
 # Move agents onto another version of their template (rebuilds their images)
-mintpress agent-templates assign my-agent-template v2 -P myproject --agents myagent,otheragent
+opschain agent-templates assign my-agent-template v2 -P myproject --agents myagent,otheragent
 ```
 
 `assign` changes only which version of its own template each agent uses; an agent built from a
@@ -1640,7 +1636,7 @@ different template is refused.
 
 ### 11.1 What a change is
 
-A **change** runs a single action against a project, environment, or asset. Changes are how MintPress runs an automated process — deployments, configuration updates, compliance checks, data migrations, or custom scripts. Each change has a unique ID, a status code, start/end timestamps, and a log stream.
+A **change** runs a single action against a project, environment, or asset. Changes are how OpsChain runs an automated process — deployments, configuration updates, compliance checks, data migrations, or custom scripts. Each change has a unique ID, a status code, start/end timestamps, and a log stream.
 
 Terminal statuses: `success`, `warning`, `error`, `system_error`, `cancelled`, `aborted`, `rejected`, `skipped`. A change ends `skipped` when its action's `run_if` condition is false, so nothing ran; it exits non-zero like the other non-success statuses. `warning` means the change succeeded only because `ignore_failure` absorbed a failure; like `success`, it exits zero, and a waiting command prints `Note: Change finished with warnings: a failure was ignored (ignore_failure)` to stderr (except with `-q` or `-o json`).
 
@@ -1659,42 +1655,42 @@ environment-scoped asset; omit it to target a project-level asset.
 
 ```bash
 # Execute the 'deploy' action on an environment-scoped asset
-mintpress changes create -E dev -A myasset -a deploy
+opschain changes create -E dev -A myasset -a deploy
 
 # Execute it on a project-level asset (no environment)
-mintpress changes create -P myproject -A myasset -a deploy
+opschain changes create -P myproject -A myasset -a deploy
 
 # Run against a different version of the asset's template
-mintpress changes create -E dev -A myasset -a deploy -t v1.1
+opschain changes create -E dev -A myasset -a deploy -t v1.1
 
 # Wait for the change to finish
-mintpress changes create -E dev -A myasset -a deploy --wait-for-completion
+opschain changes create -E dev -A myasset -a deploy --wait-for-completion
 
 # Wait and stream logs in real-time
-mintpress changes create -E dev -A myasset -a deploy -w --show-logs
+opschain changes create -E dev -A myasset -a deploy -w --show-logs
 
 # Wait and watch the step tree update in place instead of streaming logs
-mintpress changes create -E dev -A myasset -a deploy -w --show-steps
+opschain changes create -E dev -A myasset -a deploy -w --show-steps
 
 # Stream logs with UTC timestamps
-mintpress changes create -E dev -A myasset -a deploy -w --show-logs --utc
+opschain changes create -E dev -A myasset -a deploy -w --show-logs --utc
 
 # Have the server release any wait step automatically, except approval steps (no need to wait or stay attached)
-mintpress changes create -E dev -A myasset -a deploy --auto-continue-wait-steps
+opschain changes create -E dev -A myasset -a deploy --auto-continue-wait-steps
 
 # Skip steps matching a glob pattern (repeat the flag for multiple patterns)
-mintpress changes create -E dev -A myasset -a deploy --skip-steps 'steps/to/skip/**'
+opschain changes create -E dev -A myasset -a deploy --skip-steps 'steps/to/skip/**'
 
 # Begin at a step partway through the action's step tree
-mintpress changes create -E dev -A myasset -a deploy --starting-step 'deploy/child2'
+opschain changes create -E dev -A myasset -a deploy --starting-step 'deploy/child2'
 
 # MintModel difference change on a templated node (both ids required)
-mintpress changes create -E dev -A myasset -a deploy \
+opschain changes create -E dev -A myasset -a deploy \
   --old-mintmodel-id d5533422-b3d7-47da-96ee-b0c810d0df6e \
   --new-mintmodel-id eecff7d2-9064-43ab-bf87-298719e597e0
 
 # Capture the change ID for later (quiet mode, no -w)
-CHANGE_ID=$(mintpress changes create -E dev -A myasset -a deploy -q)
+CHANGE_ID=$(opschain changes create -E dev -A myasset -a deploy -q)
 ```
 
 #### Project and environment scope
@@ -1713,7 +1709,7 @@ Error: --template-version is only valid for asset scope (-A/--asset); project an
 Environment scope:
 
 ```bash
-mintpress changes create \
+opschain changes create \
   -E dev \
   -a deploy \
   --git-remote github \
@@ -1723,7 +1719,7 @@ mintpress changes create \
 Project scope:
 
 ```bash
-mintpress changes create \
+opschain changes create \
   -a deploy \
   --git-remote github \
   --git-rev main
@@ -1797,36 +1793,36 @@ screen, so pick one.
 
 `-E`/`--environment` is optional. Pass one or more environment codes to fan out across the (environment × asset) matrix; omit it to target project-level assets — assets that don't sit in an environment — the same way `changes create --asset` does without `-E`. In project-level mode, `'*'` means every project-level asset, and project-level rows show `(project)` in the ENVIRONMENT column (with `-o json`/`yaml` the environment is empty).
 
-`changes` aliases to `change`, so `mintpress change execute …` works too.
+`changes` aliases to `change`, so `opschain change execute …` works too.
 
 ```bash
 # Run 'Shutdown' on three named assets in dev
-mintpress change execute -E dev --action Shutdown --assets db1,db2,web1
+opschain change execute -E dev --action Shutdown --assets db1,db2,web1
 
 # Fan out across multiple environments (env × asset matrix)
-mintpress change execute -E dev,staging --action Shutdown --assets db1,web1
+opschain change execute -E dev,staging --action Shutdown --assets db1,web1
 
 # Project-level assets — omit -E; name them, or use '*' for every project-level asset
-mintpress change execute -P myproject --action Shutdown --assets db1,db2
-mintpress change execute -P myproject --action Shutdown --assets '*'
+opschain change execute -P myproject --action Shutdown --assets db1,db2
+opschain change execute -P myproject --action Shutdown --assets '*'
 
 # Target EVERY asset in the environment(s) — quote the '*' so the shell doesn't expand it
-mintpress change execute -E dev --action Shutdown --assets '*'
+opschain change execute -E dev --action Shutdown --assets '*'
 
 # Preview what would happen without creating any changes
-mintpress change execute -E dev --action Shutdown --assets '*' --dry-run
+opschain change execute -E dev --action Shutdown --assets '*' --dry-run
 
 # Create the changes, then wait for all of them to finish
-mintpress change execute -E dev --action Shutdown --assets db1,db2 --wait-for-completion
+opschain change execute -E dev --action Shutdown --assets db1,db2 --wait-for-completion
 
 # Have the server release any wait step (other than an approval step) each change hits so none of them stall
-mintpress change execute -E dev --action Shutdown --assets db1,db2 --auto-continue-wait-steps
+opschain change execute -E dev --action Shutdown --assets db1,db2 --auto-continue-wait-steps
 
 # Wait, and watch each change's step tree update in place (interactive terminal)
-mintpress change execute -E dev --action Shutdown --assets db1,db2 -w --show-steps
+opschain change execute -E dev --action Shutdown --assets db1,db2 -w --show-steps
 
 # Scripting: print only the created change IDs
-mintpress change execute -E dev --action Shutdown --assets db1,db2 -q
+opschain change execute -E dev --action Shutdown --assets db1,db2 -q
 ```
 
 **Behaviour & flags:**
@@ -1864,39 +1860,39 @@ has an asset but no environment.
 
 ```bash
 # All recent changes (default: 15, sorted newest-first)
-mintpress changes list
+opschain changes list
 
 # Include workflow runs alongside changes
-mintpress changes list --include-workflow-runs
+opschain changes list --include-workflow-runs
 
 # Changes in a specific project
-mintpress changes list --project myproject
+opschain changes list --project myproject
 
 # Changes in a specific environment
-mintpress changes list --project myproject -E dev
+opschain changes list --project myproject -E dev
 
 # Changes for a specific asset within an environment
-mintpress changes list --project myproject -E dev -A myasset
+opschain changes list --project myproject -E dev -A myasset
 
 # Changes for a project-level asset (no -E)
-mintpress changes list --project myproject -A myasset
+opschain changes list --project myproject -A myasset
 
 # Filter by status
-mintpress changes list --project myproject --status success
-mintpress changes list --project myproject --status error
-mintpress changes list --project myproject --status running
+opschain changes list --project myproject --status success
+opschain changes list --project myproject --status error
+opschain changes list --project myproject --status running
 
 # Increase the result limit
-mintpress changes list --project myproject --limit 50
+opschain changes list --project myproject --limit 50
 
 # Count every match instead of stopping at 1000
-mintpress changes list --project myproject --status error --exact-count
+opschain changes list --project myproject --status error --exact-count
 
 # Sort by status ascending
-mintpress changes list --sort "status_code asc"
+opschain changes list --sort "status_code asc"
 
 # Save every matching change to a CSV file, not just the newest 15
-mintpress changes list --project myproject --status error --out-file errors.csv
+opschain changes list --project myproject --status error --out-file errors.csv
 ```
 
 `--out-file` keeps the scope and filter flags (`-P`, `-E`, `-A`, `--status`, `--filter`,
@@ -1934,36 +1930,36 @@ Use `--filter "field_predicate=value"` for server-side filtering. Multiple `--fi
 
 ```bash
 # Changes created after a specific date
-mintpress changes list --project myproject \
+opschain changes list --project myproject \
   --filter "created_at_gt=2025-01-01T00:00:00Z"
 
 # Changes in a date range
-mintpress changes list --project myproject \
+opschain changes list --project myproject \
   --filter "created_at_gt=2025-01-01T00:00:00Z" \
   --filter "created_at_lt=2025-02-01T00:00:00Z"
 
 # Changes where action equals 'deploy'
-mintpress changes list --project myproject \
+opschain changes list --project myproject \
   --filter "action_eq=deploy"
 
 # Changes where status code contains 'error'
-mintpress changes list \
+opschain changes list \
   --filter "status_code_cont=error" \
   --limit 100
 
 # Changes whose name starts with 'nightly'
-mintpress changes list --project myproject \
+opschain changes list --project myproject \
   --filter "name_start=nightly"
 
 # Combine filters: successful deploy changes in the last month
-mintpress changes list --project myproject \
+opschain changes list --project myproject \
   --filter "status_code_eq=success" \
   --filter "action_eq=deploy" \
   --filter "created_at_gt=2025-02-01T00:00:00Z" \
   --limit 50
 
 # Show results in UTC
-mintpress changes list --project myproject --utc
+opschain changes list --project myproject --utc
 ```
 
 **Available Ransack predicates:** `_eq`, `_not_eq`, `_cont`, `_start`, `_end`, `_gt`, `_lt`, `_gteq`, `_lteq`
@@ -1976,19 +1972,19 @@ count, or `--limit 0` to return every log line.
 
 ```bash
 # Fetch the last 50 log lines for a change
-mintpress changes logs b5bf89b6-6512-4f18-8b4d-cdac8a597231
+opschain changes logs b5bf89b6-6512-4f18-8b4d-cdac8a597231
 
 # Fetch the last 200 log lines
-mintpress changes logs b5bf89b6 --limit 200
+opschain changes logs b5bf89b6 --limit 200
 
 # Fetch all log lines
-mintpress changes logs b5bf89b6 --limit 0
+opschain changes logs b5bf89b6 --limit 0
 
 # View logs in UTC
-mintpress changes logs b5bf89b6 --utc
+opschain changes logs b5bf89b6 --utc
 
 # Export logs as JSON
-mintpress changes logs b5bf89b6 -o json
+opschain changes logs b5bf89b6 -o json
 ```
 
 A change's log contains the lines of every step in the change. To read a single step's
@@ -2001,7 +1997,7 @@ reaches a terminal status (`success`, `warning`, `error`, `system_error`, `cance
 
 ```bash
 # Follow a running change's logs
-mintpress changes logs b5bf89b6 --tail
+opschain changes logs b5bf89b6 --tail
 ```
 
 > **Note:** `--tail` requires table output and cannot be combined with `-o json`,
@@ -2012,7 +2008,7 @@ form `<timestamp> [<category>] <message>`. `--out-file` can't be combined with `
 `--tail`.
 
 ```bash
-mintpress changes logs b5bf89b6 --out-file change.log
+opschain changes logs b5bf89b6 --out-file change.log
 ```
 
 #### Read one step's log
@@ -2023,23 +2019,23 @@ pass it to `changes steps logs`:
 
 ```bash
 # Every step of the change, as a tree
-mintpress changes steps list b5bf89b6-6512-4f18-8b4d-cdac8a597231
+opschain changes steps list b5bf89b6-6512-4f18-8b4d-cdac8a597231
 
 # Only the failed steps' IDs
-mintpress changes steps list b5bf89b6 --filter status_code_eq=error -q
+opschain changes steps list b5bf89b6 --filter status_code_eq=error -q
 
 # The last 50 lines of one step, or all of them
-mintpress changes steps logs 4a1c9f2e-1b4d-4c5e-8a9f-0123456789ab
-mintpress changes steps logs 4a1c9f2e --limit 0
+opschain changes steps logs 4a1c9f2e-1b4d-4c5e-8a9f-0123456789ab
+opschain changes steps logs 4a1c9f2e --limit 0
 
 # Save the step's whole log, including its child steps
-mintpress changes steps logs 4a1c9f2e --include-child-steps --out-file step.log
+opschain changes steps logs 4a1c9f2e --include-child-steps --out-file step.log
 ```
 
 `changes steps list` lists the steps in tree order: each step is followed by its children,
 and `STEP` is indented one level per depth. An arm of a branch shows as `<key> (arm)`, and a
 choice of a wait step as `<key> (choice)`. `ACTION` is blank for arms and for the actions
-MintPress generates for branch and wait steps.
+OpsChain generates for branch and wait steps.
 
 ```text
 ID                                    STEP                ACTION     STATUS   REASON
@@ -2058,7 +2054,7 @@ reason (for example `Block returned "eu"`), `not taken` for a step in an arm tha
 (followed by the arm's reason when there is one), or `skipped on request` for a step skipped
 with `--skip-steps`.
 
-MintPress creates the steps under a choice only once the choice is made. Until then the table
+OpsChain creates the steps under a choice only once the choice is made. Until then the table
 lists them from the change's step tree with the ID `-` and the status `pending`. It does this
 only when it lists every step, so not with `--filter` or `--limit`, or when the server
 truncated the list. Steps under a step that has finished, or was skipped or not taken, are
@@ -2088,26 +2084,26 @@ running change.
 
 ```bash
 # Attach to a running change and stream its logs until it completes
-mintpress changes attach b5bf89b6-6512-4f18-8b4d-cdac8a597231
+opschain changes attach b5bf89b6-6512-4f18-8b4d-cdac8a597231
 
 # Attach but only show status transitions (no log streaming)
-mintpress changes attach b5bf89b6 --show-logs=false
+opschain changes attach b5bf89b6 --show-logs=false
 
 # Attach and watch the step tree update in place instead of streaming logs
-mintpress changes attach b5bf89b6 --show-steps
+opschain changes attach b5bf89b6 --show-steps
 
 # Attach and release any wait step the change hits (for changes created without the flag)
-mintpress changes attach b5bf89b6 --auto-continue-wait-steps
+opschain changes attach b5bf89b6 --auto-continue-wait-steps
 
 # Attach with UTC timestamps
-mintpress changes attach b5bf89b6 --utc
+opschain changes attach b5bf89b6 --utc
 
 # Scripting: wait for completion, then print only the change ID
-mintpress changes attach b5bf89b6 -q
+opschain changes attach b5bf89b6 -q
 
 # Typical flow: create detached, do other work, then reattach
-CHANGE_ID=$(mintpress changes create -E dev -A myasset -a deploy -q)
-mintpress changes attach "$CHANGE_ID"
+CHANGE_ID=$(opschain changes create -E dev -A myasset -a deploy -q)
+opschain changes attach "$CHANGE_ID"
 ```
 
 Like `create --wait-for-completion`, `attach` exits non-zero when the change ends
@@ -2130,9 +2126,9 @@ completed step tree — a quick way to inspect a finished change's steps.
 ### 11.7 Cancel a change
 
 ```bash
-mintpress changes cancel b5bf89b6-6512-4f18-8b4d-cdac8a597231
-mintpress changes cancel b5bf89b6 -q   # prints ID on success
-mintpress changes cancel b5bf89b6 -o json   # prints the change after the cancel
+opschain changes cancel b5bf89b6-6512-4f18-8b4d-cdac8a597231
+opschain changes cancel b5bf89b6 -q   # prints ID on success
+opschain changes cancel b5bf89b6 -o json   # prints the change after the cancel
 ```
 
 > **Note:** Any change that hasn't finished can be cancelled — pending, queued, running or waiting.
@@ -2150,25 +2146,25 @@ step(s) for a change and continues them.
 
 ```bash
 # Continue a change that has a single waiting step (auto-detected)
-mintpress changes continue b5bf89b6-6512-4f18-8b4d-cdac8a597231
+opschain changes continue b5bf89b6-6512-4f18-8b4d-cdac8a597231
 
 # Continue with a message recorded against the step
-mintpress changes continue b5bf89b6 -m "Sanity checks done, ok to proceed"
+opschain changes continue b5bf89b6 -m "Sanity checks done, ok to proceed"
 
 # Continue a specific waiting step directly (skips the lookup)
-mintpress changes continue b5bf89b6 --step afe3063d-3182-4c03-90c8-66ff933c15db
+opschain changes continue b5bf89b6 --step afe3063d-3182-4c03-90c8-66ff933c15db
 
 # Continue every waiting step of a change
-mintpress changes continue b5bf89b6 --all
+opschain changes continue b5bf89b6 --all
 
 # Continue an input step, supplying the values it is waiting on
-mintpress changes continue b5bf89b6 --input-arguments '{"name":"John","date":"2026-07-23"}'
+opschain changes continue b5bf89b6 --input-arguments '{"name":"John","date":"2026-07-23"}'
 
 # Continue a wait step with choices, picking the choice to run
-mintpress changes continue b5bf89b6 --choice promote
+opschain changes continue b5bf89b6 --choice promote
 
 # Scripting: print continued step IDs only
-mintpress changes continue b5bf89b6 -q
+opschain changes continue b5bf89b6 -q
 ```
 
 **Behaviour with multiple wait steps:** if a change has more than one step in the
@@ -2199,16 +2195,16 @@ with the same `--step`, `--all`, `-m/--message` and `-q` behaviour as `continue`
 
 ```bash
 # Approve a change with a single step waiting for approval
-mintpress changes approve b5bf89b6-6512-4f18-8b4d-cdac8a597231
+opschain changes approve b5bf89b6-6512-4f18-8b4d-cdac8a597231
 
 # Approve and pick the choice to run
-mintpress changes approve b5bf89b6 --choice promote
+opschain changes approve b5bf89b6 --choice promote
 
 # Approve a specific step, with a note
-mintpress changes approve b5bf89b6 --step afe3063d-3182-4c03-90c8-66ff933c15db -m "Reviewed the plan"
+opschain changes approve b5bf89b6 --step afe3063d-3182-4c03-90c8-66ff933c15db -m "Reviewed the plan"
 
 # Reject, recording the reason
-mintpress changes reject b5bf89b6 -m "Wrong target environment"
+opschain changes reject b5bf89b6 -m "Wrong target environment"
 ```
 
 `--choice` works on `approve` as it does on `continue`, for an approval step with
@@ -2238,25 +2234,25 @@ The original change is left untouched.
 
 ```bash
 # Retry a failed change
-mintpress changes retry b5bf89b6-6512-4f18-8b4d-cdac8a597231
+opschain changes retry b5bf89b6-6512-4f18-8b4d-cdac8a597231
 
 # Retry and wait, streaming logs
-mintpress changes retry b5bf89b6 -w --show-logs
+opschain changes retry b5bf89b6 -w --show-logs
 
 # Retry and wait, watching the step tree redraw in place
-mintpress changes retry b5bf89b6 -w --show-steps
+opschain changes retry b5bf89b6 -w --show-steps
 
 # Retry on the latest commit for the change's revision
-mintpress changes retry b5bf89b6 --refresh-sha
+opschain changes retry b5bf89b6 --refresh-sha
 
 # Retry but skip different steps this time
-mintpress changes retry b5bf89b6 --skip-steps 'deploy/**'
+opschain changes retry b5bf89b6 --skip-steps 'deploy/**'
 
 # Retry, running the steps the original skipped (e.g. its on_failure rollback)
-mintpress changes retry b5bf89b6 --skip-steps ''
+opschain changes retry b5bf89b6 --skip-steps ''
 
 # Scripting: print the new change ID only
-mintpress changes retry b5bf89b6 -q
+opschain changes retry b5bf89b6 -q
 ```
 
 The change being retried must have ended in `error`, `system_error`, `cancelled`, `aborted`
@@ -2315,11 +2311,11 @@ sibling steps are still going. Find the step's ID with `changes steps list` (§1
 
 ```bash
 # Find the failed step
-mintpress changes steps list b5bf89b6 --filter status_code_eq=error
+opschain changes steps list b5bf89b6 --filter status_code_eq=error
 
 # Retry it, optionally recording a note against the retry
-mintpress changes steps retry 4a1c9f2e-1b4d-4c5e-8a9f-0123456789ab
-mintpress changes steps retry 4a1c9f2e -m "Network restored, retrying"
+opschain changes steps retry 4a1c9f2e-1b4d-4c5e-8a9f-0123456789ab
+opschain changes steps retry 4a1c9f2e -m "Network restored, retrying"
 ```
 
 The step, and the steps below it that failed or did not run, go back to `pending` and run
@@ -2365,7 +2361,7 @@ pattern. It is **not** comma-separated. To skip five specific steps out of fifty
 repeat the flag five times:
 
 ```bash
-mintpress changes create -E dev -A obpotd -a Provision \
+opschain changes create -E dev -A obpotd -a Provision \
   --skip-steps 'Provision/mintmodel:binaries/mintmodel:install_software_binaries/mintmodel:install_binaries_for_custwprd1otd01' \
   --skip-steps 'Provision/mintmodel:binaries/mintmodel:apply_patches_for_stage_post_binaries/mintmodel:apply_patches_for_stage_post_binaries_on_custwprd1otd01' \
   --skip-steps 'Provision/mintmodel:binaries/mintmodel:apply_patches_for_stage_post_binaries/mintmodel:apply_patches_for_stage_post_binaries_on_custwprd1otd02' \
@@ -2377,7 +2373,7 @@ A comma does not split a pattern:
 
 ```bash
 # WRONG — this is ONE pattern that literally contains commas, so it matches nothing
-mintpress changes create ... --skip-steps 'stepA,stepB,stepC'
+opschain changes create ... --skip-steps 'stepA,stepB,stepC'
 ```
 
 This differs from `changes execute`, where `--assets` and `-E` do take
@@ -2403,13 +2399,13 @@ or a naming pattern, one glob beats a long list of exact paths:
 
 ```bash
 # Skip a whole subtree — every step under "Apply patches"
-mintpress changes create ... --skip-steps 'Provision/mintmodel:binaries/mintmodel:apply_patches_for_stage_post_binaries/**'
+opschain changes create ... --skip-steps 'Provision/mintmodel:binaries/mintmodel:apply_patches_for_stage_post_binaries/**'
 
 # Skip every patch step, wherever it sits in the tree
-mintpress changes create ... --skip-steps '**/mintmodel:apply_patch_*'
+opschain changes create ... --skip-steps '**/mintmodel:apply_patch_*'
 
 # Skip everything scoped to one host
-mintpress changes create ... --skip-steps '**/*custwprd1otd01*'
+opschain changes create ... --skip-steps '**/*custwprd1otd01*'
 ```
 
 Reach for repeated exact `--skip-steps` values when the steps don't share a
@@ -2420,13 +2416,13 @@ guessing them:
 
 ```bash
 # Pull every step's full_path from an existing change (copy the strings verbatim)
-mintpress changes get b5bf89b6 -o json | jq -r '.attributes.initial_step_tree | .. | .full_path? // empty'
+opschain changes get b5bf89b6 -o json | jq -r '.attributes.initial_step_tree | .. | .full_path? // empty'
 
 # Or watch the tree while a change runs
-mintpress changes create -E dev -A obpotd -a Provision -w --show-steps
+opschain changes create -E dev -A obpotd -a Provision -w --show-steps
 ```
 
-`mintpress assets actions <asset> --tree` (§9) also prints each step's action code.
+`opschain assets actions <asset> --tree` (§9) also prints each step's action code.
 Note the change's tree is rooted at the action (e.g. `Provision/…`), so include
 that root in your patterns or anchor them with `**/`.
 
@@ -2452,7 +2448,7 @@ ancestors and the root step, which still run so the action can reach it.
 
 ```bash
 # Run the "deploy" action, but start at its child2 step
-mintpress changes create -E dev -A myasset -a deploy --starting-step 'deploy/child2'
+opschain changes create -E dev -A myasset -a deploy --starting-step 'deploy/child2'
 ```
 
 The path is the same `full_path` `--skip-steps` uses (§11.10) — the slash-joined
@@ -2476,13 +2472,13 @@ about a failure without watching the terminal.
 
 ```bash
 # Tell the ops alias when a change fails or succeeds
-mintpress changes create -E dev -A myasset -a deploy \
+opschain changes create -E dev -A myasset -a deploy \
   --notify-email ops@example.com \
   --notify-event error,success
 
 # Notify a user and an LDAP group on every lifecycle event
 # (naming another user requires a superuser; anyone else passes the user's UUID)
-mintpress changes create -E dev -A myasset -a deploy \
+opschain changes create -E dev -A myasset -a deploy \
   --notify-user-id jsmith --notify-ldap-group platform \
   --notify-event create,start,error,success,cancel
 ```
@@ -2527,8 +2523,8 @@ Pause a change to hold it between steps — while a dependency is down, or to wa
 maintenance window — without cancelling it:
 
 ```bash
-mintpress changes pause b5bf89b6-6512-4f18-8b4d-cdac8a597231 --reason "Waiting for the DB maintenance window"
-mintpress changes resume b5bf89b6-6512-4f18-8b4d-cdac8a597231
+opschain changes pause b5bf89b6-6512-4f18-8b4d-cdac8a597231 --reason "Waiting for the DB maintenance window"
+opschain changes resume b5bf89b6-6512-4f18-8b4d-cdac8a597231
 ```
 
 A paused change starts no new steps. Steps already running carry on to the end, so the
@@ -2565,59 +2561,59 @@ Workflows are reusable, versioned automation scripts written in YAML that orches
 
 ```bash
 # List workflows in a project
-mintpress workflows list
-mintpress workflows list --limit 10          # first 10 only
+opschain workflows list
+opschain workflows list --limit 10          # first 10 only
 
 # Get a workflow by code, name, or ID (see §4 "Referring to a resource")
-mintpress workflows get deploy-app
-mintpress workflows get --id <uuid>
+opschain workflows get deploy-app
+opschain workflows get --id <uuid>
 
 # Create a workflow from a YAML file (draft by default)
-mintpress workflows create \
+opschain workflows create \
   --code deploy-app \
   --source-yaml-file deploy-app.yaml
 
 # Create as published immediately
-mintpress workflows create \
+opschain workflows create \
   --code deploy-app \
   --name "Deploy Application" \
   --source-yaml-file deploy-app.yaml \
   --publish
 
 # Create with validation
-mintpress workflows create \
+opschain workflows create \
   --code deploy-app \
   --source-yaml-file deploy-app.yaml \
   --validate
 
 # Update a workflow
-mintpress workflows update deploy-app --name "Deploy Application v2"
-mintpress workflows update deploy-app --description "Updated deployment workflow"
-mintpress workflows update deploy-app --archive
+opschain workflows update deploy-app --name "Deploy Application v2"
+opschain workflows update deploy-app --description "Updated deployment workflow"
+opschain workflows update deploy-app --archive
 
 # Delete a workflow (and all its versions)
-mintpress workflows delete deploy-app
+opschain workflows delete deploy-app
 
 # Delete only draft versions (preserve published)
-mintpress workflows delete-drafts deploy-app
+opschain workflows delete-drafts deploy-app
 
 # List versions of a workflow
-mintpress workflows versions list deploy-app
+opschain workflows versions list deploy-app
 
 # Create a new version from an updated YAML file
-mintpress workflows versions create deploy-app --source-yaml-file deploy-app.yaml
+opschain workflows versions create deploy-app --source-yaml-file deploy-app.yaml
 
 # Show one version, publish a draft (or send it back to draft), delete a version
-mintpress workflows versions get deploy-app 2
-mintpress workflows versions update deploy-app 2 --publish
-mintpress workflows versions update deploy-app 2 --draft
-mintpress workflows versions delete deploy-app 2    # archived instead if it has been run
+opschain workflows versions get deploy-app 2
+opschain workflows versions update deploy-app 2 --publish
+opschain workflows versions update deploy-app 2 --draft
+opschain workflows versions delete deploy-app 2    # archived instead if it has been run
 
 # Create/update a version and expand multi-target steps + replace properties,
 # optionally supplying property values used during resolution
-mintpress workflows versions create deploy-app --source-yaml-file deploy-app.yaml \
+opschain workflows versions create deploy-app --source-yaml-file deploy-app.yaml \
   --resolve-properties --property-overrides '{"replicas": 3}'
-mintpress workflows versions update deploy-app 2 --source-yaml-file deploy-app.yaml \
+opschain workflows versions update deploy-app 2 --source-yaml-file deploy-app.yaml \
   --resolve-properties --property-overrides '{"replicas": 3}'
 ```
 
@@ -2638,103 +2634,79 @@ lower.
 
 ```bash
 # Execute a specific version of a workflow
-mintpress workflows runs create --code deploy-app --version 2
+opschain workflows runs create --code deploy-app --version 2
 
 # Wait for completion
-mintpress workflows runs create --code deploy-app --version 2 \
+opschain workflows runs create --code deploy-app --version 2 \
   --wait-for-completion
 
 # Wait and stream logs
-mintpress workflows runs create --code deploy-app --version 2 \
+opschain workflows runs create --code deploy-app --version 2 \
   -w --show-logs
 
 # With property overrides
-mintpress workflows runs create --code deploy-app --version 2 \
+opschain workflows runs create --code deploy-app --version 2 \
   --property-overrides '{"target_env": "prod", "replicas": 5}'
 
 # With metadata
-mintpress workflows runs create --code deploy-app --version 2 \
+opschain workflows runs create --code deploy-app --version 2 \
   --metadata '{"triggered_by": "jenkins", "build_number": "1234"}'
 
 # Skip steps by name, or by a glob over the name (repeat the flag for multiple patterns)
-mintpress workflows runs create --code deploy-app --version 2 \
+opschain workflows runs create --code deploy-app --version 2 \
   --skip-steps 'Smoke test*'
 
-# Start at the first child of the second top-level step
-mintpress workflows runs create --code deploy-app --version 2 \
-  --starting-step 2/1
-
 # Notify an email address and an LDAP group when the run errors or succeeds
-mintpress workflows runs create --code deploy-app --version 2 \
+opschain workflows runs create --code deploy-app --version 2 \
   --notify-email ops@example.com --notify-ldap-group platform \
   --notify-event error,success
 
 # Capture the run ID
-RUN_ID=$(mintpress workflows runs create --code deploy-app --version 2 -q)
+RUN_ID=$(opschain workflows runs create --code deploy-app --version 2 -q)
 
 # List runs for one workflow
-mintpress workflows runs list --code deploy-app
-mintpress workflows runs list --code deploy-app --limit 20
+opschain workflows runs list --code deploy-app
+opschain workflows runs list --code deploy-app --limit 20
 
 # List runs across every workflow and project (omit --code)
-mintpress workflows runs list --limit 50
+opschain workflows runs list --limit 50
 
 # Recent runs of every workflow in one project
-mintpress workflows runs list -P myproject --limit 50
+opschain workflows runs list -P myproject --limit 50
 
 # All runs that errored, newest first
-mintpress workflows runs list --filter status_code_eq=error
+opschain workflows runs list --filter status_code_eq=error
 
 # Get status of a specific run
-mintpress workflows runs get $RUN_ID
+opschain workflows runs get $RUN_ID
 
 # Reattach to a detached run and follow it to completion (streams logs by default)
-mintpress workflows runs attach $RUN_ID
-mintpress workflows runs attach $RUN_ID --show-steps      # live step tree instead of logs
-mintpress workflows runs attach $RUN_ID --show-logs=false # status transitions only
+opschain workflows runs attach $RUN_ID
+opschain workflows runs attach $RUN_ID --show-steps      # live step tree instead of logs
+opschain workflows runs attach $RUN_ID --show-logs=false # status transitions only
 
 # View logs for a run
-mintpress workflows runs logs $RUN_ID
-mintpress workflows runs logs $RUN_ID --utc
-mintpress workflows runs logs $RUN_ID --out-file run.log   # whole log, oldest first
+opschain workflows runs logs $RUN_ID
+opschain workflows runs logs $RUN_ID --utc
+opschain workflows runs logs $RUN_ID --out-file run.log   # whole log, oldest first
 
 # Retry a failed/cancelled run
-mintpress workflows runs retry $RUN_ID
-mintpress workflows runs retry $RUN_ID --wait-for-completion --show-logs
+opschain workflows runs retry $RUN_ID
+opschain workflows runs retry $RUN_ID --wait-for-completion --show-logs
 
 # Retry, overriding the skip_steps of the run being retried
 # (omit --skip-steps to inherit the original run's skip_steps unchanged)
-mintpress workflows runs retry $RUN_ID --skip-steps 'Smoke test*'
-
-# Retry, starting at a different step
-# (omit --starting-step to inherit the original run's starting step)
-mintpress workflows runs retry $RUN_ID --starting-step 3
-
-# Retry from the beginning, dropping the original run's starting step
-mintpress workflows runs retry $RUN_ID --starting-step ''
+opschain workflows runs retry $RUN_ID --skip-steps 'Smoke test*'
 
 # Retry, and tell the ops alias if the new run fails
-mintpress workflows runs retry $RUN_ID --notify-email ops@example.com --notify-event error
+opschain workflows runs retry $RUN_ID --notify-email ops@example.com --notify-event error
 
 # Cancel a running workflow run
-mintpress workflows runs cancel $RUN_ID
+opschain workflows runs cancel $RUN_ID
 ```
 
 > `--skip-steps` on a workflow run matches each step's **name**, exactly or as a glob, not a
 > `full_path` as for changes. See §11.10 for the glob dialect.
-
-**Starting part-way through.** `--starting-step` takes a step's position: the 1-based index of
-each step from the top level down, joined with `/`. `2/1` is the first child of the second
-top-level step, and `3` is the third top-level step. `workflows runs steps list $RUN_ID --tree`
-prints each step's position before its name, and the flat list has a `POSITION` column, so you
-can read a position off an earlier run of the same version. Steps before the starting step are
-skipped, except its ancestors, which run so that it can, and wait and approval steps, which
-still wait.
-MintPress rejects a position with no step, one inside a multi-target step or a parallel stage
-(start at the multi-target step or the stage instead), and one that `--skip-steps` would skip.
-`workflows runs get` shows the starting step of a run that has one. `workflows runs retry`
-inherits the retried run's starting step; pass `--starting-step` to replace it, or
-`--starting-step ''` to start from the beginning.
 
 **Warning status.** A run's terminal statuses include `warning`: the run succeeded only because
 `ignore_failure` absorbed a failure. Like `success`, it is a successful outcome, so `runs create -w`,
@@ -2745,7 +2717,7 @@ inherits the retried run's starting step; pass `--starting-step` to replace it, 
 **Listing runs.** `workflows runs list --code <code>` (with a project) lists one workflow's runs.
 Omit `--code` and it lists runs across every workflow and project; add `-P <project>` to list
 only that project's runs. A default project, from your profile's `default_project` or
-`MINTPRESS_DEFAULT_PROJECT`, doesn't narrow this list. In both modes `--limit` caps the count, `--sort` sets the order (default `updated_at desc`), and `--filter` applies ransack
+`OPSCHAIN_DEFAULT_PROJECT`, doesn't narrow this list. In both modes `--limit` caps the count, `--sort` sets the order (default `updated_at desc`), and `--filter` applies ransack
 predicates (`field_predicate=value`, repeatable) — e.g. `--filter status_code_eq=error`.
 
 **Attaching to a run.** `workflows runs create -w` waits and streams from the start, but a run
@@ -2764,7 +2736,7 @@ Name recipients with any mix of `--notify-user-id` (a username or a user's UUID)
 `--notify-ldap-group`, and `--notify-email`; each is repeatable or comma-separated.
 `--notify-event` picks which events fire a notification — one or more of `cancel`,
 `create`, `error`, `start`, `success`, `warning` (`success` also covers `warning`). Name at least one event: targets with no events
-subscribe to nothing (see §11.12). MintPress rejects an unknown event, a user it cannot find, or a
+subscribe to nothing (see §11.12). OpsChain rejects an unknown event, a user it cannot find, or a
 malformed email address. Omit every `--notify-*` flag and no notifications are configured.
 
 `workflows runs retry` inherits the retried run's subscription. Set any `--notify-*` flag on
@@ -2781,37 +2753,37 @@ prints).
 
 ```bash
 # List the steps of a run, with their status and who must approve each
-mintpress workflows runs steps list $RUN_ID
+opschain workflows runs steps list $RUN_ID
 
-# Render the step hierarchy as a tree (shows each step's position, target asset and action)
-mintpress workflows runs steps list $RUN_ID --tree
+# Render the step hierarchy as a tree (shows each step's target asset and action)
+opschain workflows runs steps list $RUN_ID --tree
 
 # List steps across every run — e.g. everything still waiting for approval
-mintpress workflows runs steps list --filter status_code_eq=waiting_for_approval
+opschain workflows runs steps list --filter status_code_eq=waiting_for_approval
 
 # Just the step IDs
-mintpress workflows runs steps list $RUN_ID -q
+opschain workflows runs steps list $RUN_ID -q
 
 # Narrow the page (the server returns at most 1000 steps)
-mintpress workflows runs steps list --filter status_code_eq=waiting_for_approval --limit 50
+opschain workflows runs steps list --filter status_code_eq=waiting_for_approval --limit 50
 
 # Inspect one step and read its logs
-mintpress workflows runs steps get $STEP_ID
-mintpress workflows runs steps logs $STEP_ID --utc
-mintpress workflows runs steps logs $STEP_ID --out-file step.log
+opschain workflows runs steps get $STEP_ID
+opschain workflows runs steps logs $STEP_ID --utc
+opschain workflows runs steps logs $STEP_ID --out-file step.log
 
 # Approve an approval step (releases it so the run continues)
-mintpress workflows runs steps approve $STEP_ID -m "reviewed and approved"
+opschain workflows runs steps approve $STEP_ID -m "reviewed and approved"
 
 # Reject an approval step (fails it so the run stops there)
-mintpress workflows runs steps reject $STEP_ID -m "wrong target environment"
+opschain workflows runs steps reject $STEP_ID -m "wrong target environment"
 
 # Continue a wait step
-mintpress workflows runs steps continue $STEP_ID
+opschain workflows runs steps continue $STEP_ID
 
 # Pick the choice to run on a step with choices
-mintpress workflows runs steps approve $STEP_ID --choice promote
-mintpress workflows runs steps continue $STEP_ID --choice promote
+opschain workflows runs steps approve $STEP_ID --choice promote
+opschain workflows runs steps continue $STEP_ID --choice promote
 ```
 
 `-m`/`--message` is optional on `approve`, `reject`, and `continue`; the note is recorded against the
@@ -2852,8 +2824,8 @@ with `--filter` to keep a cross-run sweep small.
 ### 12.4 Pause and resume a run
 
 ```bash
-mintpress workflows runs pause $RUN_ID --reason "Waiting for the DB maintenance window"
-mintpress workflows runs resume $RUN_ID
+opschain workflows runs pause $RUN_ID --reason "Waiting for the DB maintenance window"
+opschain workflows runs resume $RUN_ID
 ```
 
 A paused run starts no new steps; steps already running finish first. As with a change
@@ -2868,7 +2840,7 @@ Pausing a run does not pause a change it has already started. Pause that change 
 
 ## 13. Scheduling
 
-MintPress supports two ways to schedule automated actions.
+OpsChain supports two ways to schedule automated actions.
 
 > **Note:** `create` needs a project code. Either pass `--project <code>` / `-P <code>`, or set `default_project` in your active profile (see §3.1). `list` uses the project as a scope when one is set; `get`, `update` and `delete` take only the activity ID.
 
@@ -2876,8 +2848,8 @@ MintPress supports two ways to schedule automated actions.
 
 | Approach | Best for |
 |---|---|
-| `mintpress changes create --schedule "..."` | Simple one-off or recurring change schedules |
-| `mintpress scheduled-activities create` | Full control over scheduling, both changes and workflows |
+| `opschain changes create --schedule "..."` | Simple one-off or recurring change schedules |
+| `opschain scheduled-activities create` | Full control over scheduling, both changes and workflows |
 
 ### 13.2 Cron expressions and one-shot `--run-at`
 
@@ -2905,7 +2877,7 @@ Common patterns:
 Use `--run-at` for a single future execution:
 
 ```bash
-mintpress changes create -E dev -A myasset -a deploy \
+opschain changes create -E dev -A myasset -a deploy \
   --run-at "2025-12-25 14:00:00" \
   --timezone "Australia/Sydney"
 ```
@@ -2933,32 +2905,32 @@ This creates a scheduled activity automatically, without requiring you to use th
 
 ```bash
 # Schedule a recurring deployment (daily at 2am)
-mintpress changes create \
+opschain changes create \
   -E dev -A myasset -a deploy \
   --schedule "0 2 * * *" \
   --repeat
 
 # Schedule a one-shot deployment on New Year
-mintpress changes create \
+opschain changes create \
   -E dev -A myasset -a deploy \
   --run-at "2026-01-01 00:00:00" \
   --timezone "UTC"
 
 # Schedule with new-commits-only guard (skips if no new commits)
-mintpress changes create \
+opschain changes create \
   -E dev -a deploy \
   --git-remote github --git-rev main \
   --schedule "0 3 * * *" --repeat --new-commits-only
 
 # Schedule with max run count and end date
-mintpress changes create \
+opschain changes create \
   -E dev -A myasset -a deploy \
   --schedule "0 2 * * *" --repeat \
   --max-runs 30 \
   --end-at "2025-12-31 00:00:00"
 
 # Only run when a new commit touches src/, ignoring docs/
-mintpress changes create \
+opschain changes create \
   -E dev -a deploy \
   --git-remote github --git-rev main \
   --schedule "0 3 * * *" --repeat --new-commits-only \
@@ -2981,25 +2953,25 @@ change it creates notifies the same people.
 
 ### 13.5 Scheduled Activities management
 
-Use `mintpress scheduled-activities` (alias: `scheduled-activity`) for full CRUD control.
+Use `opschain scheduled-activities` (alias: `scheduled-activity`) for full CRUD control.
 
 ```bash
 # List scheduled activities
-mintpress scheduled-activities list
-mintpress scheduled-activities list --project myproject
-mintpress scheduled-activities list --project myproject -E dev
-mintpress scheduled-activities list --project myproject -E dev -A myasset
-mintpress scheduled-activities list --project myproject -A myasset      # project-level asset
-mintpress scheduled-activities list --type scheduled_change
-mintpress scheduled-activities list --type scheduled_workflow
-mintpress scheduled-activities list --enabled true
-mintpress scheduled-activities list --label nightly
+opschain scheduled-activities list
+opschain scheduled-activities list --project myproject
+opschain scheduled-activities list --project myproject -E dev
+opschain scheduled-activities list --project myproject -E dev -A myasset
+opschain scheduled-activities list --project myproject -A myasset      # project-level asset
+opschain scheduled-activities list --type scheduled_change
+opschain scheduled-activities list --type scheduled_workflow
+opschain scheduled-activities list --enabled true
+opschain scheduled-activities list --label nightly
 
 # Get details of a specific activity
-mintpress scheduled-activities get <id>
+opschain scheduled-activities get <id>
 
 # Create a scheduled change
-mintpress scheduled-activities create \
+opschain scheduled-activities create \
   --type scheduled_change \
   -E dev -A myasset \
   -a deploy \
@@ -3007,14 +2979,14 @@ mintpress scheduled-activities create \
   --repeat
 
 # The same on a project-level asset (no -E)
-mintpress scheduled-activities create \
+opschain scheduled-activities create \
   --type scheduled_change \
   -A myasset \
   -a deploy \
   --schedule "0 2 * * *"
 
 # Create a scheduled workflow pinned to version 3
-mintpress scheduled-activities create \
+opschain scheduled-activities create \
   --type scheduled_workflow \
   --workflow backup \
   --version 3 \
@@ -3022,28 +2994,28 @@ mintpress scheduled-activities create \
   --repeat
 
 # Create one that always runs the workflow's latest published version
-mintpress scheduled-activities create \
+opschain scheduled-activities create \
   --type scheduled_workflow \
   --workflow backup \
   --schedule "0 0 * * 0" \
   --repeat
 
 # Skip steps matching a glob pattern on the scheduled runs (repeatable)
-mintpress scheduled-activities create \
+opschain scheduled-activities create \
   --type scheduled_change \
   -E dev -A myasset -a deploy \
   --schedule "0 2 * * *" \
   --skip-steps 'steps/to/skip/**'
 
 # Have the server release wait steps on each scheduled run
-mintpress scheduled-activities create \
+opschain scheduled-activities create \
   --type scheduled_change \
   -E dev -A myasset -a deploy \
   --schedule "0 2 * * *" \
   --auto-continue-wait-steps
 
 # Notify the ops alias whenever a scheduled run fails
-mintpress scheduled-activities create \
+opschain scheduled-activities create \
   --type scheduled_change \
   -E dev -A myasset -a deploy \
   --schedule "0 2 * * *" \
@@ -3051,7 +3023,7 @@ mintpress scheduled-activities create \
   --notify-event error
 
 # Only run when a new commit touches the application code
-mintpress scheduled-activities create \
+opschain scheduled-activities create \
   --type scheduled_change \
   -E dev -A myasset -a deploy \
   --schedule "0 2 * * *" \
@@ -3061,34 +3033,34 @@ mintpress scheduled-activities create \
   --commit-file-pattern-exclude 'app/docs/**'
 
 # Update a scheduled activity
-mintpress scheduled-activities update <id> --notify-email ops@example.com --notify-event error,success
-mintpress scheduled-activities update <id> --schedule "0 3 * * *"
-mintpress scheduled-activities update <id> --enabled=false    # disable
+opschain scheduled-activities update <id> --notify-email ops@example.com --notify-event error,success
+opschain scheduled-activities update <id> --schedule "0 3 * * *"
+opschain scheduled-activities update <id> --enabled=false    # disable
 
 # Move a one-off to a new time; the ID stays the same
-mintpress scheduled-activities update <id> \
+opschain scheduled-activities update <id> \
   --run-at "2026-11-28 23:00:00" --timezone Australia/Sydney
 
 # Create an activity that starts out disabled
-mintpress scheduled-activities create \
+opschain scheduled-activities create \
   --type scheduled_change \
   -E dev -A myasset -a deploy \
   --schedule "0 2 * * *" \
   --enabled=false
-mintpress scheduled-activities update <id> --git-rev develop
-mintpress scheduled-activities update <id> --skip-steps 'steps/to/skip/**'
-mintpress scheduled-activities update <id> --auto-continue-wait-steps
-mintpress scheduled-activities update <id> --settings-overrides '{"dockerfile": "Dockerfile_custom"}'
-mintpress scheduled-activities update <id> --commit-file-pattern 'app/**'
-mintpress scheduled-activities update <id> --label nightly,prod
-mintpress scheduled-activities update <id> --clear-labels
+opschain scheduled-activities update <id> --git-rev develop
+opschain scheduled-activities update <id> --skip-steps 'steps/to/skip/**'
+opschain scheduled-activities update <id> --auto-continue-wait-steps
+opschain scheduled-activities update <id> --settings-overrides '{"dockerfile": "Dockerfile_custom"}'
+opschain scheduled-activities update <id> --commit-file-pattern 'app/**'
+opschain scheduled-activities update <id> --label nightly,prod
+opschain scheduled-activities update <id> --clear-labels
 
 # Move a scheduled workflow onto another version, or back to floating
-mintpress scheduled-activities update <id> --version 4
-mintpress scheduled-activities update <id> --version 0
+opschain scheduled-activities update <id> --version 4
+opschain scheduled-activities update <id> --version 0
 
 # Delete a scheduled activity
-mintpress scheduled-activities delete <id>
+opschain scheduled-activities delete <id>
 ```
 
 `-P`, `-E` and `-A` select the node on both `create` and `list`. `-A` with `-E` is the
@@ -3158,7 +3130,7 @@ blank for an activity on an environment or project.
 > asset (-A); the asset's template supplies the source`.
 >
 > **Move a one-off with `update --run-at`.** The activity keeps its ID, and the new time
-> is read in `--timezone` (or your local timezone), as on `create`. MintPress queues the run
+> is read in `--timezone` (or your local timezone), as on `create`. OpsChain queues the run
 > at the new time itself; you need `--enabled=true` as well only if the activity was
 > disabled. The time must be in the future. `--run-at` replaces the cron schedule, so it
 > also clears `--end-at`, `--max-runs` and repeat, and turns a recurring activity into a
@@ -3173,7 +3145,7 @@ blank for an activity on an environment or project.
 
 ```bash
 # Daily database backup (workflow)
-mintpress scheduled-activities create \
+opschain scheduled-activities create \
   --type scheduled_workflow \
   --workflow db-backup \
   --version 1 \
@@ -3182,7 +3154,7 @@ mintpress scheduled-activities create \
   --timezone "UTC"
 
 # Weekly report generation
-mintpress scheduled-activities create \
+opschain scheduled-activities create \
   --type scheduled_workflow \
   --workflow weekly-report \
   --version 2 \
@@ -3191,7 +3163,7 @@ mintpress scheduled-activities create \
   --timezone "America/New_York"
 
 # New-commits-only deployment — only runs when new commits land on main
-mintpress scheduled-activities create \
+opschain scheduled-activities create \
   --type scheduled_change \
   -E staging \
   -a deploy \
@@ -3201,7 +3173,7 @@ mintpress scheduled-activities create \
   --new-commits-only
 
 # Allow parallel execution for a busy schedule
-mintpress scheduled-activities create \
+opschain scheduled-activities create \
   --type scheduled_change \
   -E dev -A myasset \
   -a sync \
@@ -3215,7 +3187,7 @@ mintpress scheduled-activities create \
 
 ### 14.1 What policies and rules are
 
-An **authorisation policy** is a named set of access control rules. Each **rule** defines what a user can do at a particular path in MintPress's resource hierarchy. **Assignments** link users or groups to a policy.
+An **authorisation policy** is a named set of access control rules. Each **rule** defines what a user can do at a particular path in OpsChain's resource hierarchy. **Assignments** link users or groups to a policy.
 
 A path like `/projects/myproject/environments/dev` grants access scoped to that environment.
 
@@ -3223,31 +3195,31 @@ A path like `/projects/myproject/environments/dev` grants access scoped to that 
 
 Look policies up by name or UUID — a bare argument is matched as an ID, then a name — or force one with `--name` / `--id`. Policies have no code. `update` takes the policy's name or ID as its argument, or `--id`; `--name` is not a lookup flag there.
 
-The table shows each policy's ID, name, whether it is a `SYSTEM` policy (one MintPress manages itself, such as the superuser policy) and who created it. `create` and `update` print the policy with `-o json` or `-o yaml`, and its ID with `-q`.
+The table shows each policy's ID, name, whether it is a `SYSTEM` policy (one OpsChain manages itself, such as the superuser policy) and who created it. `create` and `update` print the policy with `-o json` or `-o yaml`, and its ID with `-q`.
 
 ```bash
 # List all policies
-mintpress authorisation-policies list
-mintpress auth-policies list   # alias
+opschain authorisation-policies list
+opschain auth-policies list   # alias
 
 # Get a policy by name or ID
-mintpress authorisation-policies get "Read-Only Users"
-mintpress authorisation-policies get --id abc-uuid-123
-mintpress authorisation-policies get --name "Read-Only Users"
+opschain authorisation-policies get "Read-Only Users"
+opschain authorisation-policies get --id abc-uuid-123
+opschain authorisation-policies get --name "Read-Only Users"
 
 # Create a policy
-mintpress authorisation-policies create "Read-Only Users"
-mintpress authorisation-policies create "Read-Only Users" --description "View-only access"
+opschain authorisation-policies create "Read-Only Users"
+opschain authorisation-policies create "Read-Only Users" --description "View-only access"
 
 # Create from a JSON file (can include initial rules)
-mintpress authorisation-policies create --from-file policy.json
+opschain authorisation-policies create --from-file policy.json
 
 # Update policy description
-mintpress authorisation-policies update "Read-Only Users" --description "Updated description"
+opschain authorisation-policies update "Read-Only Users" --description "Updated description"
 
 # Delete a policy
-mintpress authorisation-policies delete "Read-Only Users"
-mintpress authorisation-policies delete --id abc-uuid-123
+opschain authorisation-policies delete "Read-Only Users"
+opschain authorisation-policies delete --id abc-uuid-123
 ```
 
 ### 14.3 Rules
@@ -3259,24 +3231,24 @@ Rules control access at specific resource paths. Each rule is a standalone resou
 
 ```bash
 # List all rules for a policy
-mintpress authorisation-policies rules list "Read-Only Users"
-mintpress authorisation-policies rules list --id <policy-id>
+opschain authorisation-policies rules list "Read-Only Users"
+opschain authorisation-policies rules list --id <policy-id>
 
 # Get a specific rule
-mintpress authorisation-policies rules get "Read-Only Users" <rule-id>
+opschain authorisation-policies rules get "Read-Only Users" <rule-id>
 
 # Create a new rule
-mintpress authorisation-policies rules create "Read-Only Users" \
+opschain authorisation-policies rules create "Read-Only Users" \
   --path "/projects/myproject" \
   --readable
 
-mintpress authorisation-policies rules create "Read-Only Users" \
+opschain authorisation-policies rules create "Read-Only Users" \
   --path "/projects/myproject/environments/dev" \
   --readable \
   --executable
 
 # Create a rule with full access and a name label
-mintpress authorisation-policies rules create "DevOps Team" \
+opschain authorisation-policies rules create "DevOps Team" \
   --path "/projects/myproject" \
   --readable \
   --updatable \
@@ -3285,17 +3257,17 @@ mintpress authorisation-policies rules create "DevOps Team" \
   --name "Full project access"
 
 # Update a rule (only supply the fields you want to change)
-mintpress authorisation-policies rules update <rule-id> \
+opschain authorisation-policies rules update <rule-id> \
   --executable=true
 
-mintpress authorisation-policies rules update <rule-id> \
+opschain authorisation-policies rules update <rule-id> \
   --deletable=true
 
-mintpress authorisation-policies rules update <rule-id> \
+opschain authorisation-policies rules update <rule-id> \
   --name "Project viewers"
 
 # Delete a rule (dissociates from the policy; the standalone rule remains)
-mintpress authorisation-policies rules delete "Read-Only Users" <rule-id>
+opschain authorisation-policies rules delete "Read-Only Users" <rule-id>
 ```
 
 The ID that `rules list` shows is the rule's own ID, and `get`, `update` and `delete` take that ID. `update` takes only the rule ID, because a rule is updated on its own and the change applies in every policy that uses it. `delete` also accepts the ID of the link between the policy and the rule.
@@ -3304,157 +3276,87 @@ The ID that `rules list` shows is the rule's own ID, and `get`, `update` and `de
 
 ### 14.4 Assignments
 
-Assignments link users or groups to a policy. `set` is destructive: it replaces **all** of the policy's assignments. `add` and `remove` change only the assignments they name.
+Assignments link users or groups to a policy. The assignments endpoint replaces **all** assignments on POST, so `set` is destructive while `add` is additive.
 
 ```bash
 # List current assignments
-mintpress authorisation-policies assignments list "Read-Only Users"
+opschain authorisation-policies assignments list "Read-Only Users"
 
 # SET (replaces all existing assignments)
-mintpress authorisation-policies assignments set "Read-Only Users" \
+opschain authorisation-policies assignments set "Read-Only Users" \
   --users alice,bob \
   --groups devs,qa
 
-# ADD (keeps existing, adds new)
-mintpress authorisation-policies assignments add "Read-Only Users" \
+# ADD (preserves existing, adds new)
+opschain authorisation-policies assignments add "Read-Only Users" \
   --users charlie
 
-# ADD a local user
-mintpress authorisation-policies assignments add "Read-Only Users" \
-  --users erin --auth-provider local
-
 # REMOVE specific users/groups
-mintpress authorisation-policies assignments remove "Read-Only Users" --users alice
-mintpress authorisation-policies assignments remove "Read-Only Users" --groups qa
-
-# REMOVE the local user rather than the LDAP user of the same name
-mintpress authorisation-policies assignments remove "Read-Only Users" --users alice --auth-provider local
+opschain authorisation-policies assignments remove "Read-Only Users" --users alice
+opschain authorisation-policies assignments remove "Read-Only Users" --groups qa
 
 # Remove ALL assignments
-mintpress authorisation-policies assignments remove "Read-Only Users" --all
+opschain authorisation-policies assignments remove "Read-Only Users" --all
 ```
 
 > **Note:** Each assignment has either a `username` OR a `groupname`, never both.
 
 `set`, `add` and `remove` print the policy's resulting assignments with `-o json` or `-o yaml`, and their IDs with `-q`.
 
-A local user and an LDAP user can share a username. `--auth-provider ldap` or `--auth-provider local` says which one every `--users` entry means:
-
-- With `set` and `add`, leaving it out lets MintPress look the user up in LDAP first, then among local users.
-- With `remove`, leaving it out removes the LDAP user if one is assigned, otherwise the local one.
-
-`remove` removes nothing if any user or group you name is not assigned to the policy, and the error names the missing ones. If a user is assigned through the other provider, add `--auth-provider`.
-
-`set` and `add` also take the list as JSON, with `--data` inline or `--from-file`: either a bare array, `[{"username":"alice","auth_provider":"local"},{"groupname":"qa"}]`, or the same array wrapped as `{"assignments":[...]}`. `auth_provider` is optional on each user. Use it in the JSON rather than `--auth-provider`, which works only with `--users`. Removing the last assignment leaves the policy with none.
+`set` and `add` also take the list as JSON, with `--data` inline or `--from-file`: either a bare array, `[{"username":"alice"},{"groupname":"qa"}]`, or the same array wrapped as `{"assignments":[...]}`. Removing the last assignment leaves the policy with none.
 
 ### 14.5 Examples
 
 ```bash
 # Create a read-only policy for a specific project
-mintpress authorisation-policies create "Project Viewers"
-mintpress authorisation-policies rules create "Project Viewers" \
+opschain authorisation-policies create "Project Viewers"
+opschain authorisation-policies rules create "Project Viewers" \
   --path "/projects/myproject" \
   --readable \
   --name "Read myproject"
 
 # Assign a group
-mintpress authorisation-policies assignments set "Project Viewers" \
+opschain authorisation-policies assignments set "Project Viewers" \
   --groups "developers"
 
 # Create a per-environment write policy
-mintpress authorisation-policies create "Dev Deployers"
-mintpress authorisation-policies rules create "Dev Deployers" \
+opschain authorisation-policies create "Dev Deployers"
+opschain authorisation-policies rules create "Dev Deployers" \
   --path "/projects/myproject/environments/dev" \
   --readable --updatable --executable \
   --name "Dev environment access"
 
-mintpress authorisation-policies assignments set "Dev Deployers" \
+opschain authorisation-policies assignments set "Dev Deployers" \
   --users alice,bob
 
 # Create a full-access policy
-mintpress authorisation-policies create "Platform Admins"
-mintpress authorisation-policies rules create "Platform Admins" \
+opschain authorisation-policies create "Platform Admins"
+opschain authorisation-policies rules create "Platform Admins" \
   --path "/" \
   --readable --updatable --executable --deletable \
   --name "Full access"
 
-mintpress authorisation-policies assignments set "Platform Admins" \
+opschain authorisation-policies assignments set "Platform Admins" \
   --groups "platform-team"
 ```
-
-### 14.6 Check why a user can or cannot make a request
-
-`check` asks MintPress whether a user may make a request, and which check stops them if not. Pass the username, the HTTP method and the URL as the real request would use them. The URL can be a path or a full URL copied from the GUI or your browser's network tab; the host is dropped and the query string kept. Nothing is run or changed. When a local user and an LDAP user share the username, `check` checks the LDAP user; add `--auth-provider local` to check the local one.
-
-Only a global policy administrator can run `check`. Without that access, it fails with `checking access needs global policy admin rights`.
-
-```bash
-# Can jsmith update this scheduled activity?
-mintpress authorisation-policies check jsmith PATCH /api/projects/web/assets/db/scheduled_activities/<id>
-
-# Can jsmith run a "deploy" change on an asset? The action comes from the request body
-mintpress authorisation-policies check jsmith POST /api/projects/web/assets/db/changes --body change.json
-
-# Check the local user jsmith rather than the LDAP user of the same name
-mintpress authorisation-policies check jsmith GET /api/projects/web --auth-provider local
-
-# Read the body from stdin
-echo '{"data":{"attributes":{"action":"deploy"}}}' | \
-  mintpress authorisation-policies check jsmith POST /api/projects/web/assets/db/changes --body -
-
-# Full response as JSON
-mintpress authorisation-policies check jsmith DELETE /api/projects/web -o json
-```
-
-**Flags:**
-
-| Flag | Required | Default | Description |
-|------|----------|---------|-------------|
-| `--body` | No | — | JSON:API request body, from a file or `-` for stdin. Needed where the action depends on the body, such as creating a change or retrying a step |
-| `--auth-provider` | No | the LDAP user, else the local one | `ldap` or `local`: which user to check when a local and an LDAP user share the username |
-
-The output starts with the action the request maps to and the result: `YES`, `NO`, or `UNKNOWN` when some of the action's checks are not covered. `Superuser:   yes` appears when the user holds the Superuser policy. Each check follows in the order MintPress evaluates it. Under a `DENIED` check you see why:
-
-- the rule lookups that failed, with the policy and rule that block each one, the grant that is missing and a hint
-- `the action requires the Superuser policy` when only a superuser may make the request
-- `approval required from:` with the users and LDAP groups that may approve a step, when the user is not one of them
-
-```text
-Action:      ScheduledActivitiesController#update
-Authorised:  NO
-
-LAYER      SOURCE                                               RESULT
-scope      ScheduledActivitiesController#validate_node_path     pass
-policy     BaseScheduledActivityPolicy#update?                  DENIED
-    updatable /projects/web/assets/db/scheduled_activities
-      blocked by policy "Asset db lockdown" via group ops, rule ^/projects/web/assets/db/scheduled_activities
-      missing grant: updatable /scheduled_activities
-      hint: a grant must be in the resource tier or more specific to outrank this rule
-execution  UpdateScheduledActivityCommand#authorize_execution!  not evaluated: an earlier check denied the request
-
-Not covered:
-  (none)
-```
-
-Checks after the first denial are not evaluated. `Not covered:` lists checks that `check` cannot evaluate, such as secret permissions.
 
 ---
 
 ## 15. Events
 
-Events are audit records emitted whenever something happens in MintPress — a change runs, a workflow executes, a user logs in, a resource is created. They can be user-generated or system-generated.
+Events are audit records emitted whenever something happens in OpsChain — a change runs, a workflow executes, a user logs in, a resource is created. They can be user-generated or system-generated.
 
 ### 15.1 Listing events
 
 ```bash
 # List the 15 most recent events (default)
-mintpress events list
+opschain events list
 
 # Increase the limit
-mintpress events list --limit 50
+opschain events list --limit 50
 
 # Output as JSON or YAML for piping
-mintpress events list --output json
+opschain events list --output json
 ```
 
 ### 15.2 Convenience filters
@@ -3463,18 +3365,18 @@ These flags cover the most common filtering needs:
 
 ```bash
 # Events of a specific type
-mintpress events list --type "api:changes:success"
-mintpress events list -t "api:workflow_runs:start"
+opschain events list --type "api:changes:success"
+opschain events list -t "api:workflow_runs:start"
 
 # Events by a specific user
-mintpress events list --username alice
-mintpress events list -u deploy-bot
+opschain events list --username alice
+opschain events list -u deploy-bot
 
 # Only system-generated events
-mintpress events list --system
+opschain events list --system
 
 # Only user-generated events (exclude system)
-mintpress events list --user
+opschain events list --user
 ```
 
 ### 15.3 Scoping to a project, environment or asset
@@ -3483,25 +3385,25 @@ Use `-P/--project`, `-E/--environment` and `-A/--asset` to scope events to a nod
 
 ```bash
 # All events for a project (and everything nested under it)
-mintpress events list -P myproject
+opschain events list -P myproject
 
 # All events for an environment (and its assets/changes/steps)
-mintpress events list -P myproject -E dev
+opschain events list -P myproject -E dev
 
 # Events for a specific asset within an environment
-mintpress events list -P myproject -E dev -A my_asset
+opschain events list -P myproject -E dev -A my_asset
 
 # Events for a project-level asset (no -E)
-mintpress events list -P myproject -A my_asset
+opschain events list -P myproject -A my_asset
 ```
 
 Notes:
 
-- `--environment` and `--asset` both require `--project` (via the flag, the `MINTPRESS_DEFAULT_PROJECT` env var, or a profile `default_project`).
+- `--environment` and `--asset` both require `--project` (via the flag, the `OPSCHAIN_DEFAULT_PROJECT` env var, or a profile `default_project`).
 - `-A` without `-E` selects the project-level asset with that code, the same way `changes create` reads the flags. For an asset inside an environment, give `-E` as well. Earlier releases treated `-A` alone as "this asset in any environment", but matched any asset whose code started with the value, in any project. `changes list` had the same fault.
 - These flags translate to `event_node_path` filters for you, so you don't have to remember the `_eq` vs `_start` distinction (using `_eq` on an environment would silently drop its assets' events — scoping handles this correctly).
-- Scoping flags compose with the convenience filters and `--filter` (all AND-ed together), e.g. `mintpress events list -P myproject -E dev --type "api:changes:success"`.
-- A default project (`MINTPRESS_DEFAULT_PROJECT` or a profile `default_project`) scopes `events list` as if you had passed `-P`, so events with no node, such as custom events, drop out. Unset it to see every event.
+- Scoping flags compose with the convenience filters and `--filter` (all AND-ed together), e.g. `opschain events list -P myproject -E dev --type "api:changes:success"`.
+- A default project (`OPSCHAIN_DEFAULT_PROJECT` or a profile `default_project`) scopes `events list` as if you had passed `-P`, so events with no node, such as custom events, drop out. Unset it to see every event.
 - Event types have three colon-separated parts, `<source>:<model>:<event>` — for example `api:changes:success` or `api:workflow_runs:start`.
 - The listing table includes a `NODE PATH` column showing each event's `event_node_path`.
 
@@ -3509,7 +3411,7 @@ For hand-rolled `event_node_path` filters, see the `--filter` section below.
 
 ### 15.4 Advanced filtering with `--filter`
 
-The `--filter` flag maps directly to MintPress's Ransack-style filter parameters. The format is `field_predicate=value`.
+The `--filter` flag maps directly to OpsChain's Ransack-style filter parameters. The format is `field_predicate=value`.
 
 **Predicates:**
 
@@ -3530,21 +3432,21 @@ The `--filter` flag maps directly to MintPress's Ransack-style filter parameters
 
 ```bash
 # All failed change events
-mintpress events list --filter "type_eq=api:changes:error"
+opschain events list --filter "type_eq=api:changes:error"
 
 # Events for a specific project node path
-mintpress events list --filter "event_node_path_eq=/projects/myproject"
+opschain events list --filter "event_node_path_eq=/projects/myproject"
 
 # Events under a project (all environments, assets, etc.)
-mintpress events list --filter "event_node_path_start=/projects/myproject"
+opschain events list --filter "event_node_path_start=/projects/myproject"
 
 # Events in a date range
-mintpress events list \
+opschain events list \
   --filter "created_at_gteq=2026-04-01T00:00:00Z" \
   --filter "created_at_lteq=2026-04-30T23:59:59Z"
 
 # Combine filters: failed changes in a project this month
-mintpress events list \
+opschain events list \
   --filter "type_eq=api:changes:error" \
   --filter "event_node_path_start=/projects/myproject" \
   --filter "created_at_gteq=2026-04-01T00:00:00Z" \
@@ -3557,10 +3459,10 @@ Multiple `--filter` flags are AND-ed together.
 
 ```bash
 # Sort by created_at ascending (oldest first)
-mintpress events list --sort "created_at asc"
+opschain events list --sort "created_at asc"
 
 # Sort by type
-mintpress events list --sort "type asc"
+opschain events list --sort "type asc"
 ```
 
 Default sort is `created_at desc` (newest first).
@@ -3571,11 +3473,11 @@ The `CREATED AT` column shows timestamps in your system's local timezone by defa
 
 ```bash
 # Local timezone (default)
-mintpress events list
+opschain events list
 
 # UTC
-mintpress events list --utc
-mintpress events get eb89e69e-5feb-4751-abe7-8a2fa53ce42e --utc
+opschain events list --utc
+opschain events get eb89e69e-5feb-4751-abe7-8a2fa53ce42e --utc
 ```
 
 `--utc` only affects the table output. `--output json` and `--output yaml` always emit the raw timestamps returned by the API.
@@ -3583,34 +3485,34 @@ mintpress events get eb89e69e-5feb-4751-abe7-8a2fa53ce42e --utc
 ### 15.7 Get a specific event
 
 ```bash
-mintpress events get <event-id>
-mintpress events get eb89e69e-5feb-4751-abe7-8a2fa53ce42e --output json
+opschain events get <event-id>
+opschain events get eb89e69e-5feb-4751-abe7-8a2fa53ce42e --output json
 ```
 
 ### 15.8 Creating a custom event
 
-You can emit custom events — useful for marking external milestones (pipeline stages, approvals, deployments from other tools) in the MintPress audit trail.
+You can emit custom events — useful for marking external milestones (pipeline stages, approvals, deployments from other tools) in the OpsChain audit trail.
 
 `--type` is required. Additional attributes can be passed inline as JSON via `--data`, or loaded from a file via `--from-file`. The two are mutually exclusive.
 
 ```bash
 # Minimal event
-mintpress events create --type "deploy.started"
+opschain events create --type "deploy.started"
 
 # With additional context inline
-mintpress events create \
+opschain events create \
   --type "deploy.completed" \
   --data '{"environment": "prod", "version": "v2.1.0", "triggered_by": "github-actions"}'
 
 # Attach the event to a node, so events list -P/-E/-A finds it
-mintpress events create --type "deploy.completed" --node-path /projects/web/environments/prod
+opschain events create --type "deploy.completed" --node-path /projects/web/environments/prod
 
 # Load data from a file
-mintpress events create --type "deploy.completed" --from-file ./event-payload.json
+opschain events create --type "deploy.completed" --from-file ./event-payload.json
 
 # Capture the new event ID for later lookup
-event_id=$(mintpress events create --type "pipeline.checkpoint" -q)
-mintpress events get "$event_id"
+event_id=$(opschain events create --type "pipeline.checkpoint" -q)
+opschain events get "$event_id"
 ```
 
 The JSON file (or `--data` value) should be a flat or nested object — its keys are merged directly into the event's attributes alongside `type`:
@@ -3636,48 +3538,48 @@ The JSON file (or `--data` value) should be a flat or nested object — its keys
 
 #### Option 1 — Bearer token (recommended)
 
-Store a single `MINTPRESS_TOKEN` secret in your CI system. Obtain the token by running `mintpress tokens login` locally or in a separate authentication step.
+Store a single `OPSCHAIN_TOKEN` secret in your CI system. Obtain the token by running `opschain tokens login` locally or in a separate authentication step.
 
 ```bash
-export MINTPRESS_API_URL=${{ secrets.MINTPRESS_API_URL }}
-export MINTPRESS_TOKEN=${{ secrets.MINTPRESS_TOKEN }}
+export OPSCHAIN_API_URL=${{ secrets.OPSCHAIN_API_URL }}
+export OPSCHAIN_TOKEN=${{ secrets.OPSCHAIN_TOKEN }}
 
-mintpress changes list -P myproject
+opschain changes list -P myproject
 ```
 
 #### Option 2 — Username and password
 
 ```bash
-export MINTPRESS_API_URL=${{ secrets.MINTPRESS_API_URL }}
-export MINTPRESS_USERNAME=${{ secrets.MINTPRESS_USERNAME }}
-export MINTPRESS_PASSWORD=${{ secrets.MINTPRESS_PASSWORD }}
+export OPSCHAIN_API_URL=${{ secrets.OPSCHAIN_API_URL }}
+export OPSCHAIN_USERNAME=${{ secrets.OPSCHAIN_USERNAME }}
+export OPSCHAIN_PASSWORD=${{ secrets.OPSCHAIN_PASSWORD }}
 
-mintpress changes list -P myproject
+opschain changes list -P myproject
 ```
 
 #### Option 3 — Login step in pipeline (token refreshed each run)
 
 ```bash
-export MINTPRESS_API_URL=${{ secrets.MINTPRESS_API_URL }}
+export OPSCHAIN_API_URL=${{ secrets.OPSCHAIN_API_URL }}
 # Create a profile for this run, then swap its credentials for a bearer token
-mintpress config profiles add ci --api-url "$MINTPRESS_API_URL" \
-  --username ${{ secrets.MINTPRESS_USERNAME }} \
-  --password ${{ secrets.MINTPRESS_PASSWORD }}
-mintpress --profile ci tokens login
+opschain config profiles add ci --api-url "$OPSCHAIN_API_URL" \
+  --username ${{ secrets.OPSCHAIN_USERNAME }} \
+  --password ${{ secrets.OPSCHAIN_PASSWORD }}
+opschain --profile ci tokens login
 
 # Subsequent commands use the bearer token automatically
-mintpress --profile ci changes list -P myproject
+opschain --profile ci changes list -P myproject
 ```
 
 ### Capture IDs with `-q` for shell scripting
 
 ```bash
 # Create a project and capture its code
-PROJECT=$(mintpress projects create --code newproj --name "New Project" -q)
+PROJECT=$(opschain projects create --code newproj --name "New Project" -q)
 echo "Created: $PROJECT"
 
 # Create a change and wait for result
-CHANGE_ID=$(mintpress changes create -P myproject -E dev -A myasset -a deploy -q)
+CHANGE_ID=$(opschain changes create -P myproject -E dev -A myasset -a deploy -q)
 echo "Change: $CHANGE_ID"
 ```
 
@@ -3690,7 +3592,7 @@ The `--wait-for-completion` flag returns a non-zero exit code when the change en
 set -e
 
 echo "Deploying..."
-mintpress changes create \
+opschain changes create \
   -P myproject -E prod -A webapp -a deploy \
   --wait-for-completion \
   --show-logs
@@ -3702,20 +3604,20 @@ echo "Deployment complete!"
 
 ```bash
 # Get all project codes
-mintpress projects list -o json | jq -r '.[] | .attributes.code'
+opschain projects list -o json | jq -r '.[] | .attributes.code'
 
 # Get the ID of the most recent error change
-mintpress changes list -P myproject --status error --limit 1 -o json \
+opschain changes list -P myproject --status error --limit 1 -o json \
   | jq -r '.[0].id'
 
 # Get all running changes and their start times
-mintpress changes list --status running -o json \
+opschain changes list --status running -o json \
   | jq '.[] | {id: .id, started_at: .attributes.started_at}'
 
 # Wait for a change by ID (attach exits non-zero on failure), then check its final status
 CHANGE_ID="b5bf89b6-6512-4f18-8b4d-cdac8a597231"
-mintpress changes attach "$CHANGE_ID" -q >/dev/null || true
-STATUS=$(mintpress changes get $CHANGE_ID -o json | jq -r '.attributes.status_code')
+opschain changes attach "$CHANGE_ID" -q >/dev/null || true
+STATUS=$(opschain changes get $CHANGE_ID -o json | jq -r '.attributes.status_code')
 echo "Final status: $STATUS"
 ```
 
@@ -3734,18 +3636,18 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Download MintPress CLI
+      - name: Download OpsChain CLI
         run: |
-          curl -L https://github.com/limepoint/product-releases/releases/latest/download/mintpress_linux_amd64.zip -o mintpress.zip
-          unzip mintpress.zip
-          chmod +x mintpress
+          curl -L https://github.com/limepoint/product-releases/releases/latest/download/opschain_linux_amd64.zip -o opschain.zip
+          unzip opschain.zip
+          chmod +x opschain
 
       - name: Deploy
         env:
-          MINTPRESS_API_URL: ${{ secrets.MINTPRESS_API_URL }}
-          MINTPRESS_TOKEN: ${{ secrets.MINTPRESS_TOKEN }}   # bearer token preferred in CI
+          OPSCHAIN_API_URL: ${{ secrets.OPSCHAIN_API_URL }}
+          OPSCHAIN_TOKEN: ${{ secrets.OPSCHAIN_TOKEN }}   # bearer token preferred in CI
         run: |
-          ./mintpress changes create \
+          ./opschain changes create \
             -P myproject -E prod -A webapp -a deploy \
             --wait-for-completion \
             --show-logs \
@@ -3754,7 +3656,7 @@ jobs:
 
 ### Example: Jenkins Pipeline
 
-The example below shows a declarative Jenkins pipeline that deploys via MintPress after a successful build. The `--wait-for-completion` flag blocks the pipeline step until the change reaches a terminal state; a non-zero exit code automatically fails the Jenkins stage if the change errors or is cancelled.
+The example below shows a declarative Jenkins pipeline that deploys via OpsChain after a successful build. The `--wait-for-completion` flag blocks the pipeline step until the change reaches a terminal state; a non-zero exit code automatically fails the Jenkins stage if the change errors or is cancelled.
 
 ```groovy
 pipeline {
@@ -3762,9 +3664,9 @@ pipeline {
 
     environment {
         // Store credentials in Jenkins as Secret Text credentials
-        MINTPRESS_API_URL = credentials('mintpress-api-url')
-        MINTPRESS_TOKEN   = credentials('mintpress-token')   // bearer token preferred
-        MINTPRESS_PROJECT = credentials('mintpress-project')
+        OPSCHAIN_API_URL = credentials('opschain-api-url')
+        OPSCHAIN_TOKEN   = credentials('opschain-token')   // bearer token preferred
+        OPSCHAIN_PROJECT = credentials('opschain-project')
     }
 
     stages {
@@ -3774,15 +3676,15 @@ pipeline {
             }
         }
 
-        stage('Deploy via MintPress') {
+        stage('Deploy via OpsChain') {
             steps {
                 script {
                     // --wait-for-completion makes create block until terminal state;
                     // non-zero exit code automatically fails the pipeline on error/cancel/failure.
                     // Status updates go to stderr; log lines stream to stdout.
                     sh '''
-                        ./mintpress changes create \
-                          -P "${MINTPRESS_PROJECT}" -E staging -A webapp \
+                        ./opschain changes create \
+                          -P "${OPSCHAIN_PROJECT}" -E staging -A webapp \
                           -a deploy \
                           --metadata '{"triggered_by":"jenkins","build":"'"${BUILD_NUMBER}"'"}' \
                           --wait-for-completion \
@@ -3799,13 +3701,13 @@ pipeline {
                     // Fetch the most recent change for this asset to surface the ID in Jenkins logs
                     def changeId = sh(
                         script: '''
-                            ./mintpress changes list \
-                              -P "${MINTPRESS_PROJECT}" -E staging -A webapp \
+                            ./opschain changes list \
+                              -P "${OPSCHAIN_PROJECT}" -E staging -A webapp \
                               --limit 1 -o json | jq -r '.[0].id'
                         ''',
                         returnStdout: true
                     ).trim()
-                    echo "MintPress change: ${changeId}"
+                    echo "OpsChain change: ${changeId}"
                 }
             }
         }
@@ -3813,24 +3715,24 @@ pipeline {
 
     post {
         failure {
-            echo "Pipeline failed — check the MintPress change logs above."
+            echo "Pipeline failed — check the OpsChain change logs above."
         }
     }
 }
 ```
 
 :::tip
-Store `MINTPRESS_API_URL`, `MINTPRESS_TOKEN` and `MINTPRESS_PROJECT` as **Secret Text** credentials in Jenkins (**Manage Jenkins → Credentials**) and inject them via the `credentials()` helper as shown above — never hard-code them in the `Jenkinsfile`.
+Store `OPSCHAIN_API_URL`, `OPSCHAIN_TOKEN` and `OPSCHAIN_PROJECT` as **Secret Text** credentials in Jenkins (**Manage Jenkins → Credentials**) and inject them via the `credentials()` helper as shown above — never hard-code them in the `Jenkinsfile`.
 :::
 
 :::tip
 `--wait-for-completion -q` suppresses the progress and log output and prints only the change ID to stdout once the change finishes, so a script can capture it (the exit code still reflects the outcome):
 
 ```bash
-CHANGE_ID=$(./mintpress changes create \
-  -P "${MINTPRESS_PROJECT}" -E staging -A webapp -a deploy \
+CHANGE_ID=$(./opschain changes create \
+  -P "${OPSCHAIN_PROJECT}" -E staging -A webapp -a deploy \
   --wait-for-completion -q)
-echo "MintPress change: ${CHANGE_ID}"
+echo "OpsChain change: ${CHANGE_ID}"
 ```
 
 :::
@@ -3841,7 +3743,7 @@ echo "MintPress change: ${CHANGE_ID}"
 #!/usr/bin/env bash
 # Set up a nightly deployment schedule
 
-mintpress scheduled-activities create \
+opschain scheduled-activities create \
   --type scheduled_change \
   -P myproject -E staging -A webapp \
   -a deploy \
@@ -3858,24 +3760,24 @@ mintpress scheduled-activities create \
 When a change fails and you need to raise a defect or feature request with LimePoint support,
 `support bundle` collects everything support typically asks for — in one command — so you don't
 have to hunt down the change, its logs, the properties it ran with, and version numbers by hand.
-The MintPress server builds the bundle, using your permissions, and the CLI saves it. It is the same
+The OpsChain server builds the bundle, using your permissions, and the CLI saves it. It is the same
 bundle the GUI's **Download support bundle** button produces.
 
 ```bash
 # Write <binary>-support-<change-id>.zip in the current directory
-mintpress support bundle 3a646e8e-ce5c-499a-8488-2d0377c6a980
+opschain support bundle 3a646e8e-ce5c-499a-8488-2d0377c6a980
 
 # Choose the output path
-mintpress support bundle <change-id> --out-file ./ticket-1234.zip
+opschain support bundle <change-id> --out-file ./ticket-1234.zip
 
 # Only the human-readable summary, printed to stdout (paste into a ticket)
-mintpress support bundle <change-id> --summary-only
+opschain support bundle <change-id> --summary-only
 
 # Collect everything: full logs for all steps
-mintpress support bundle <change-id> --log-limit 0 --step-logs all
+opschain support bundle <change-id> --log-limit 0 --step-logs all
 
 # Show summary timestamps in UTC (default is the local system timezone)
-mintpress support bundle <change-id> --utc
+opschain support bundle <change-id> --utc
 ```
 
 ### What it collects
@@ -3905,7 +3807,7 @@ Each piece is collected with your own access, so the bundle holds only what you 
 - **MintModel** (mintmodel changes only) — the rendered MintModel JSON (`mintmodel/mintmodel.json`)
   and the asset's *current* source ERB (`mintmodel/mintmodel.json.erb`), which may have changed
   since the change ran.
-- **Server info** — MintPress version, API version, DB version, runner image, licence.
+- **Server info** — OpsChain version, API version, DB version, runner image, licence.
 - **Client** — the client that requested the bundle (`opschain-cli`, `mintpress-cli` or `opschain-gui`), its version, commit and build date.
 - **Recent run history** — the last 5 runs of this change's action at the same node (id, status,
   date), plus the most recent successful run — so support can see the trend and when it last
@@ -3920,7 +3822,7 @@ Each piece is collected with your own access, so the bundle holds only what you 
 
 ### Credentials
 
-The server builds the bundle from the same API responses you would get yourself, so MintPress's
+The server builds the bundle from the same API responses you would get yourself, so OpsChain's
 server-side redaction applies: sensitive values in logs and settings are redacted, and
 credentials are encrypted at rest (AES) and are not decryptable by support. The collected
 artifacts are safe to attach to a ticket.
@@ -3951,7 +3853,7 @@ If the server takes longer than the gateway in front of it allows, the command f
 ### Bundle contents
 
 The archive contains a single top-level folder, `<product>-support-<change-id>/`, where
-`<product>` is `mintpress` or `mintpress` as the server names itself, so unzipping creates one
+`<product>` is `opschain` or `mintpress` as the server names itself, so unzipping creates one
 directory rather than scattering files into the current directory. The folder name does not
 change when you choose a different file name with `--out-file`.
 
@@ -3978,7 +3880,7 @@ change when you choose a different file name with `--out-file`.
 ## 18. Generating an AI agent skill
 
 The CLI can generate a "skill" that teaches an AI coding agent how to use it. A skill is a
-self-contained reference an agent loads on demand when you ask it to work with MintPress, so it
+self-contained reference an agent loads on demand when you ask it to work with OpsChain, so it
 can run the right commands without you spelling out every flag.
 
 The skill is built by walking the binary's own command tree, so it always matches the commands,
@@ -3987,83 +3889,83 @@ subcommands, and flags present in *your* build — there is nothing to keep in s
 ### Commands
 
 ```bash
-# Write a Claude Code skill to ./.claude/skills/mintpress-cli/SKILL.md
-mintpress generate-skill
+# Write a Claude Code skill to ./.claude/skills/opschain-cli/SKILL.md
+opschain generate-skill
 
 # Write it into a specific project directory
-mintpress generate-skill --out-dir ~/projects/myapp
+opschain generate-skill --out-dir ~/projects/myapp
 
 # Print to stdout instead of writing files (e.g. to pipe or inspect)
-mintpress generate-skill --stdout
+opschain generate-skill --stdout
 ```
 
 ### Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--out-dir` | `.` | Directory to write into; files are placed under it (e.g. `.claude/skills/mintpress-cli/SKILL.md`). |
+| `--out-dir` | `.` | Directory to write into; files are placed under it (e.g. `.claude/skills/opschain-cli/SKILL.md`). |
 | `--target` | `claude` | Which agent to generate for. Currently only `claude` (Claude Code) is supported. |
 | `--stdout` | `false` | Print the generated file(s) to stdout instead of writing them to disk. |
 
 ### Using the skill with Claude Code
 
-Run `mintpress generate-skill` at the root of a project. It writes
-`.claude/skills/mintpress-cli/SKILL.md`. Commit that directory (or copy it to `~/.claude/skills/`
+Run `opschain generate-skill` at the root of a project. It writes
+`.claude/skills/opschain-cli/SKILL.md`. Commit that directory (or copy it to `~/.claude/skills/`
 to make it available in every project), and Claude Code will pick it up automatically — when you
-ask Claude to do something with MintPress, it loads the skill and uses the documented commands.
+ask Claude to do something with OpsChain, it loads the skill and uses the documented commands.
 
 Regenerate the skill after upgrading the CLI so it reflects any new commands or flags.
 
-> **Branding note:** The `opschain` binary produces an `opschain-cli` skill with OpsChain config
-> paths and `OPSCHAIN_*` environment variables. The skill adapts to the binary's branding.
+> **Branding note:** A MintPress binary produces a `mintpress-cli` skill with MintPress config
+> paths and `MINTPRESS_*` environment variables. Everything adapts to the binary's branding.
 
 ---
 
 ## 19. Secrets
 
-MintPress can encrypt values and read or write them in a secret vault. An encrypted value is safe to store in properties or settings; MintPress decrypts it at run time.
+OpsChain can encrypt values and read or write them in a secret vault. An encrypted value is safe to store in properties or settings; OpsChain decrypts it at run time.
 
 ### Commands
 
 ```bash
-# Encrypt a value (returns the MintPress-encrypted form)
-mintpress secrets encrypt --value "my-secret-value"
+# Encrypt a value (returns the OpsChain-encrypted form)
+opschain secrets encrypt --value "my-secret-value"
 
 # Print just the encrypted string, for scripting
-mintpress secrets encrypt --value "my-secret-value" -q
+opschain secrets encrypt --value "my-secret-value" -q
 
 # Store a value in a vault, identifying the node by UUID
-mintpress secrets store \
+opschain secrets store \
   --vault-owner-id cbde41d5-0cf2-45be-b4c2-04731c56bc0e \
   --vault-path secret-vault://path/to/key \
   --value "my-secret-value"
 
 # Store a value, identifying the node by project code (resolved to its UUID)
-mintpress secrets store -P myproject \
+opschain secrets store -P myproject \
   --vault-path secret-vault://path/to/key \
   --value "my-secret-value"
 
 # Omit --value to let the vault generate a random value (returned in the result)
-mintpress secrets store -P myproject \
+opschain secrets store -P myproject \
   --vault-path secret-vault://path/to/key
 
 # Overwrite an existing value at the path
-mintpress secrets store -P myproject \
+opschain secrets store -P myproject \
   --vault-path secret-vault://path/to/key \
   --value "new-value" --replace
 
 # Store a file's contents as the secret value (the filename is ignored)
-mintpress secrets store-file -P myproject \
+opschain secrets store-file -P myproject \
   --vault-path secret-vault://path/to/key \
   --file ./id_rsa
 
 # Resolve (decrypt) a value from the vault — pass the encrypted value stored at the path
-mintpress secrets resolve -P myproject \
+opschain secrets resolve -P myproject \
   --vault-path secret-vault://path/to/key \
   --expected-value "{AES2}...{/IV}..."
 
 # Print just the decrypted value
-mintpress secrets resolve -P myproject \
+opschain secrets resolve -P myproject \
   --vault-path secret-vault://path/to/key \
   --expected-value "{AES2}...{/IV}..." -q
 ```
@@ -4076,7 +3978,7 @@ version, or pass the UUID with `--vault-owner-id` and say what it is with `--vau
 (`template` or `template_version`):
 
 ```bash
-mintpress secrets store -P myproject --template "Application" --template-version v1.0 \
+opschain secrets store -P myproject --template "Application" --template-version v1.0 \
   --vault-path secret-vault://path/to/key --value "my-secret-value"
 ```
 
@@ -4139,7 +4041,7 @@ Each command prints a table (SOURCE, RESULT, FILENAME) by default. Use `-o json`
 
 ## 20. Administering the cluster
 
-`mintpress admin` works with state that spans every node — what the server is busy
+`opschain admin` works with state that spans every node — what the server is busy
 with, how loaded its worker pools are, and the Kubernetes deployments and pods it
 runs on. Access is granted by authorisation rules on the `/admin` paths (a superuser has it
 already); the sections below name the extra permissions some commands need. Deleting a pod and every
@@ -4149,13 +4051,13 @@ already); the sections below name the extra permissions some commands need. Dele
 
 ```bash
 # What is the server working on right now?
-mintpress admin background-tasks
-mintpress admin background-tasks -o json    # full detail (image SHA, render logs, links)
-mintpress admin background-tasks -q         # task IDs only
+opschain admin background-tasks
+opschain admin background-tasks -o json    # full detail (image SHA, render logs, links)
+opschain admin background-tasks -q         # task IDs only
 
 # How busy are the worker pools?
-mintpress admin resource-slots
-mintpress admin resource-slots -o json      # per-slot detail
+opschain admin resource-slots
+opschain admin resource-slots -o json      # per-slot detail
 ```
 
 `admin background-tasks` (alias `tasks`) lists every node background task that
@@ -4172,12 +4074,12 @@ each slot, since when, and whether the claim is stale.
 ### 20.2 Cluster replication health
 
 A multi-cluster install runs one primary that consumes work and one or more replicas
-streaming from it. `mintpress admin clusters` shows where each one stands:
+streaming from it. `opschain admin clusters` shows where each one stands:
 
 ```bash
-mintpress admin clusters
-mintpress admin clusters -o json    # adds API start time, cordon details, work counts
-mintpress admin clusters -q         # cluster names only
+opschain admin clusters
+opschain admin clusters -o json    # adds API start time, cordon details, work counts
+opschain admin clusters -q         # cluster names only
 ```
 
 ```text
@@ -4200,9 +4102,9 @@ Cordon a site to stop it taking new work — before stopping it for maintenance,
 disaster-recovery test:
 
 ```bash
-mintpress admin clusters cordon sydney --reason "DR test"
-mintpress admin clusters                     # watch IN PROGRESS fall to "-"
-mintpress admin clusters uncordon sydney
+opschain admin clusters cordon sydney --reason "DR test"
+opschain admin clusters                     # watch IN PROGRESS fall to "-"
+opschain admin clusters uncordon sydney
 ```
 
 A cordoned site's workers stop claiming changes, workflow runs and background tasks; work
@@ -4224,25 +4126,25 @@ Error: API error (422): Site 'sydney' cannot be cordoned because no other site i
 
 ```bash
 # What is deployed, and at how many replicas?
-mintpress admin deployments list
-mintpress admin deployments list -o json    # rollout conditions, images, labels, selector
-mintpress admin deployments list -q         # deployment names only
+opschain admin deployments list
+opschain admin deployments list -o json    # rollout conditions, images, labels, selector
+opschain admin deployments list -q         # deployment names only
 
 # Replace a deployment's pods without changing its configuration
-mintpress admin deployments restart opschain-api-worker
+opschain admin deployments restart opschain-api-worker
 
 # Run more workers
-mintpress admin deployments scale opschain-api-worker --replicas 5
+opschain admin deployments scale opschain-api-worker --replicas 5
 
 # Stop a deployment processing work
-mintpress admin deployments scale opschain-api-worker --replicas 0
+opschain admin deployments scale opschain-api-worker --replicas 0
 
 # See the MintModel API's current resources, concurrency and transformer heap
-mintpress admin deployments list -o yaml
+opschain admin deployments list -o yaml
 
 # Give MintModel renders more memory, or run more of them at once
-mintpress admin deployments resources opschain-mintmodel-api --memory-limit 8Gi
-mintpress admin deployments resources opschain-mintmodel-api --concurrency 3 --memory-limit 9Gi
+opschain admin deployments resources opschain-mintmodel-api --memory-limit 8Gi
+opschain admin deployments resources opschain-mintmodel-api --concurrency 3 --memory-limit 9Gi
 ```
 
 `admin deployments` (aliases `deployment`, `deploys`) is the command group; `list`
@@ -4274,7 +4176,7 @@ Kubernetes applies all three asynchronously. The command returns once the change
 accepted, not when the rollout finishes — run `admin deployments list` to watch it.
 Two consequences worth planning around:
 
-- Restarting the MintPress API deployment kills the pod serving your request.
+- Restarting the OpsChain API deployment kills the pod serving your request.
 - Scaling down doesn't stop the surplus workers straight away. They keep running
   until they finish their in-progress jobs, for up to the deployment's termination
   grace period — 1 hour by default.
@@ -4293,22 +4195,22 @@ overrides that parent rule.
 
 ```bash
 # What pods are running?
-mintpress admin pods list
-mintpress admin pods list -o json           # image, node and pod IPs, labels, UID
-mintpress admin pods list -q                # pod names only
+opschain admin pods list
+opschain admin pods list -o json           # image, node and pod IPs, labels, UID
+opschain admin pods list -q                # pod names only
 
 # Read a pod's log (last 1000 lines)
-mintpress admin pods logs opschain-api-worker-55db895694-vn4hr
+opschain admin pods logs opschain-api-worker-55db895694-vn4hr
 
 # A specific container of a multi-container pod
-mintpress admin pods logs mintpress-ingress-6bbc64c54b-stph4 --container proxy
+opschain admin pods logs mintpress-ingress-6bbc64c54b-stph4 --container proxy
 
 # More lines, then page forward from the last one
-mintpress admin pods logs opschain-api-7c688bdd47-zzvm7 --limit 5000
-mintpress admin pods logs opschain-api-7c688bdd47-zzvm7 --since '2026-08-07T20:10:32.191676Z-0'
+opschain admin pods logs opschain-api-7c688bdd47-zzvm7 --limit 5000
+opschain admin pods logs opschain-api-7c688bdd47-zzvm7 --since '2026-08-07T20:10:32.191676Z-0'
 
 # Write the whole log to a file
-mintpress admin pods logs change-3ecf1a2b --out-file runner.log
+opschain admin pods logs change-3ecf1a2b --out-file runner.log
 ```
 
 `admin pods list` covers every pod in the namespace — the runner pods executing
@@ -4346,7 +4248,7 @@ Reading pod logs needs the `readable` permission on the `/admin/pods/logs`
 authorisation path.
 
 Two limits apply to what Kubernetes will give you. Pod logs only exist while the pod
-does, so use `mintpress changes logs` to review a change that has already finished.
+does, so use `opschain changes logs` to review a change that has already finished.
 And at most 100MB of a pod's log is read per request — output beyond that isn't
 returned.
 
@@ -4354,14 +4256,14 @@ returned.
 
 ```bash
 # Force delete a pod (prompts to confirm)
-mintpress admin pods delete change-3ecf1a2b-4d5e-4f60-8a71-92b3c4d5e6f7
+opschain admin pods delete change-3ecf1a2b-4d5e-4f60-8a71-92b3c4d5e6f7
 
 # Skip the prompt, for scripts
-mintpress admin pods delete change-3ecf1a2b --force
+opschain admin pods delete change-3ecf1a2b --force
 
 # The accepted pod as JSON, or just its name
-mintpress admin pods delete change-3ecf1a2b --force -o json
-mintpress admin pods delete change-3ecf1a2b --force -q
+opschain admin pods delete change-3ecf1a2b --force -o json
+opschain admin pods delete change-3ecf1a2b --force -q
 ```
 
 `admin pods delete` force deletes a pod without waiting out its termination grace
@@ -4374,20 +4276,20 @@ This will force delete pod 'change-3ecf1a2b', failing any step or task it is run
 Pass `--force` to skip the prompt in a script. Kubernetes removes the pod
 asynchronously, so the command reports the pod as it was accepted for deletion.
 
-Only the pods MintPress creates to do its own processing can be deleted — change
+Only the pods OpsChain creates to do its own processing can be deleted — change
 workers, step runners, agents, generate actions, and MintModel generation. Those are
 the pods with a null `controlled_by` in `admin pods list -o json`, and they carry a
-`links.delete` entry. Anything else in the namespace, including the MintPress
+`links.delete` entry. Anything else in the namespace, including the OpsChain
 deployment and stateful set pods, is refused:
 
 ```text
 Error: API error (422): Pod 'opschain-api-worker-1' cannot be deleted - only the pods OpsChain creates to run changes, steps, agents and MintModel or action generation can be deleted
 ```
 
-Deleting a pod MintPress is still waiting on **fails** the step or task that pod was
+Deleting a pod OpsChain is still waiting on **fails** the step or task that pod was
 running. Use this to recover from a pod that is stuck, not to stop work in progress —
-cancel the change (`mintpress changes cancel`) or the workflow run
-(`mintpress workflows runs cancel`) instead.
+cancel the change (`opschain changes cancel`) or the workflow run
+(`opschain workflows runs cancel`) instead.
 
 Deleting a pod requires a superuser account. No authorisation rule grants it.
 
@@ -4400,11 +4302,11 @@ turned off. `admin drain-status` (alias
 `drain`) tells you when it has:
 
 ```bash
-mintpress info get                   # MAINTENANCE MODE: off, on, or on (superusers exempt)
-mintpress info maintenance-mode      # the same, plus RESUMING UNTIL; -q prints true or false
-mintpress admin drain-status
-mintpress admin drain-status --wait  # returns once everything has finished
-mintpress admin drain-status -q      # true or false
+opschain info get                   # MAINTENANCE MODE: off, on, or on (superusers exempt)
+opschain info maintenance-mode      # the same, plus RESUMING UNTIL; -q prints true or false
+opschain admin drain-status
+opschain admin drain-status --wait  # returns once everything has finished
+opschain admin drain-status -q      # true or false
 ```
 
 ```text
@@ -4428,10 +4330,10 @@ while: the time by which the work it held will have had a chance to start. Any u
 
 ```bash
 # Issuer, version, customer identifier and validity period
-mintpress licence get
+opschain licence get
 
 # Install a new licence file, for example on renewal
-mintpress licence upload --file ./mintpress.licence
+opschain licence upload --file ./opschain.licence
 ```
 
 `get` fails if the server reports no licence. `upload` replaces the current licence and prints the
@@ -4439,10 +4341,10 @@ new one; use `-o json` or `-o yaml` for the full record.
 
 ### 20.8 Secret vault policies and LDAP access
 
-When MintPress uses the bundled secret vault with LDAP authentication, `admin secret-vault`
+When OpsChain uses the bundled secret vault with LDAP authentication, `admin secret-vault`
 (alias `vault`) manages the vault's ACL policies and which LDAP users and groups hold them.
 Vault administrators cannot write policies in the vault directly — a policy written there could
-grant access to the vault's own configuration — so MintPress writes them on their behalf and only
+grant access to the vault's own configuration — so OpsChain writes them on their behalf and only
 accepts rule paths inside the vault's key value mounts.
 
 Every command requires a superuser account. No authorisation rule grants it. Against a server
@@ -4452,38 +4354,38 @@ using an external vault, or the bundled vault without LDAP, each command fails w
 Error: ... API error (422): Vault policies can only be managed when OpsChain uses the bundled secret vault with LDAP authentication
 ```
 
-The policies MintPress owns (those starting with `opschain-`) and the `default` and `root`
+The policies OpsChain owns (those starting with `opschain-`) and the `default` and `root`
 policies are never listed, and cannot be created, changed, deleted or assigned.
 
 #### Secret vault admin commands
 
 ```bash
 # Paths a policy rule may use
-mintpress admin secret-vault mounts
+opschain admin secret-vault mounts
 
 # Policies
-mintpress admin secret-vault policies list
-mintpress admin secret-vault policies get team-a-readers
-mintpress admin secret-vault policies get team-a-readers --document > team-a-readers.hcl
-mintpress admin secret-vault policies create team-a-readers --from-file team-a-readers.hcl
-mintpress admin secret-vault policies update team-a-readers --from-file team-a-readers.hcl
-mintpress admin secret-vault policies versions team-a-readers
-mintpress admin secret-vault policies delete team-a-readers
+opschain admin secret-vault policies list
+opschain admin secret-vault policies get team-a-readers
+opschain admin secret-vault policies get team-a-readers --document > team-a-readers.hcl
+opschain admin secret-vault policies create team-a-readers --from-file team-a-readers.hcl
+opschain admin secret-vault policies update team-a-readers --from-file team-a-readers.hcl
+opschain admin secret-vault policies versions team-a-readers
+opschain admin secret-vault policies delete team-a-readers
 
 # Assign policies to LDAP users and groups
-mintpress admin secret-vault ldap-users list
-mintpress admin secret-vault ldap-users get jsmith
-mintpress admin secret-vault ldap-users update jsmith --add team-a-readers
-mintpress admin secret-vault ldap-groups list
-mintpress admin secret-vault ldap-groups get team-a
-mintpress admin secret-vault ldap-groups update team-a --policies team-a-readers,shared-readers
-mintpress admin secret-vault ldap-groups update team-a --clear
+opschain admin secret-vault ldap-users list
+opschain admin secret-vault ldap-users get jsmith
+opschain admin secret-vault ldap-users update jsmith --add team-a-readers
+opschain admin secret-vault ldap-groups list
+opschain admin secret-vault ldap-groups get team-a
+opschain admin secret-vault ldap-groups update team-a --policies team-a-readers,shared-readers
+opschain admin secret-vault ldap-groups update team-a --clear
 ```
 
 #### Find the paths a rule can use
 
 ```bash
-mintpress admin secret-vault mounts
+opschain admin secret-vault mounts
 ```
 
 ```text
@@ -4520,8 +4422,8 @@ HCL is stored as given, comments included. A rule may use the `create`, `read`, 
 Pass the document with `--from-file` (`-` reads standard input) or inline with `--document`:
 
 ```bash
-mintpress admin secret-vault policies create team-a-readers --from-file team-a-readers.hcl
-mintpress admin secret-vault policies create team-a-readers \
+opschain admin secret-vault policies create team-a-readers --from-file team-a-readers.hcl
+opschain admin secret-vault policies create team-a-readers \
   --document '{"path":{"secrets/data/team-a/*":{"capabilities":["read","list"]}}}'
 ```
 
@@ -4545,23 +4447,23 @@ Error: failed to create vault policy 'team-a-readers': API error (422): Rules mu
 `update` replaces the whole document. To change one rule, start from the stored policy:
 
 ```bash
-mintpress admin secret-vault policies get team-a-readers --document > team-a-readers.hcl
+opschain admin secret-vault policies get team-a-readers --document > team-a-readers.hcl
 # edit team-a-readers.hcl
-mintpress admin secret-vault policies update team-a-readers --from-file team-a-readers.hcl
+opschain admin secret-vault policies update team-a-readers --from-file team-a-readers.hcl
 ```
 
 `get --document` prints the policy as the vault stores it: the HCL, comments included, for an
 HCL policy, otherwise the JSON. In `-o json` output, `document` is always JSON (an HCL policy is
 converted) and `original_document` holds the HCL, or is null for a JSON policy.
 
-`policies list` shows each rule's path in the PATHS column. A policy with settings MintPress does
+`policies list` shows each rule's path in the PATHS column. A policy with settings OpsChain does
 not manage shows `(not managed by OpsChain)` there, and its `rules` is null in `-o json`.
 
 #### See earlier versions
 
 ```bash
-mintpress admin secret-vault policies versions team-a-readers
-mintpress admin secret-vault policies versions team-a-readers -o json   # includes each document
+opschain admin secret-vault policies versions team-a-readers
+opschain admin secret-vault policies versions team-a-readers -o json   # includes each document
 ```
 
 ```text
@@ -4571,14 +4473,14 @@ ID                                    SAVED AT                  SAVED BY
 ```
 
 Versions are listed newest first and go back to when the policy was last created. They come from
-the events MintPress records, so purging those events removes them, and a change made in the vault
-outside MintPress is not listed.
+the events OpsChain records, so purging those events removes them, and a change made in the vault
+outside OpsChain is not listed.
 
 #### Delete a policy
 
 ```bash
-mintpress admin secret-vault policies delete team-a-readers           # prompts to confirm
-mintpress admin secret-vault policies delete team-a-readers --force   # for scripts
+opschain admin secret-vault policies delete team-a-readers           # prompts to confirm
+opschain admin secret-vault policies delete team-a-readers --force   # for scripts
 ```
 
 Deleting a policy first takes it away from every LDAP user and group holding it and revokes
@@ -4592,13 +4494,13 @@ in the LDAP directory, and every policy must already exist in the vault.
 
 ```bash
 # Add to, or take from, the current assignment
-mintpress admin secret-vault ldap-groups update team-a --add team-a-writers --remove team-a-readers
+opschain admin secret-vault ldap-groups update team-a --add team-a-writers --remove team-a-readers
 
 # Set the exact list
-mintpress admin secret-vault ldap-groups update team-a --policies team-a-readers,shared-readers
+opschain admin secret-vault ldap-groups update team-a --policies team-a-readers,shared-readers
 
 # Remove every policy
-mintpress admin secret-vault ldap-groups update team-a --clear
+opschain admin secret-vault ldap-groups update team-a --clear
 ```
 
 ```text
@@ -4615,14 +4517,14 @@ LDAP group 'team-a' now holds team-a-readers, shared-readers
 | `--clear` | Remove every policy |
 
 `--add` and `--remove` read the current assignment and send the result, so two administrators
-changing the same user or group at once can overwrite each other. Any MintPress-owned policy the
+changing the same user or group at once can overwrite each other. Any OpsChain-owned policy the
 user or group holds is kept whatever you send. Removing a policy revokes the user's (or the
 group members') current vault logins, so it takes effect at once.
 
 ### 20.9 External secret vaults
 
 `admin external-vaults` (alias `external-vault`) registers secret vaults that run outside
-MintPress, beside the bundled one. A settings level picks a vault by setting `vault.code` to its
+OpsChain, beside the bundled one. A settings level picks a vault by setting `vault.code` to its
 code, and users register their own tokens for it with
 `system-credentials create --vault <code>` (see
 [Your secret vault credentials](#25-your-secret-vault-credentials)).
@@ -4633,27 +4535,27 @@ Every command requires a superuser account.
 
 ```bash
 # List and inspect
-mintpress admin external-vaults list
-mintpress admin external-vaults get team_vault
-mintpress admin external-vaults get team_vault -o json
+opschain admin external-vaults list
+opschain admin external-vaults get team_vault
+opschain admin external-vaults get team_vault -o json
 
 # Register a vault whose service account uses a token
-mintpress admin external-vaults create team_vault --name "Team vault" \
+opschain admin external-vaults create team_vault --name "Team vault" \
   --address https://team.vault.example.com:8200 --auth-method token \
   --token-file service.token --client-options '{"namespace":"team"}'
 
 # Register one that signs in over LDAP
-mintpress admin external-vaults create ops_vault --name "Ops vault" \
+opschain admin external-vaults create ops_vault --name "Ops vault" \
   --address https://ops.vault.example.com:8200 --auth-method ldap \
-  --username svc-mintpress --password-file password.txt
+  --username svc-opschain --password-file password.txt
 
 # Rotate the service token, or change the address
-mintpress admin external-vaults update team_vault --token-file new-service.token
-mintpress admin external-vaults update team_vault --address https://vault2.example.com:8200
+opschain admin external-vaults update team_vault --token-file new-service.token
+opschain admin external-vaults update team_vault --address https://vault2.example.com:8200
 
 # Delete
-mintpress admin external-vaults delete team_vault           # prompts to confirm
-mintpress admin external-vaults delete team_vault --force   # for scripts
+opschain admin external-vaults delete team_vault           # prompts to confirm
+opschain admin external-vaults delete team_vault --force   # for scripts
 ```
 
 `get`, `update` and `delete` take the vault's code or ID. `-q` prints the code.
@@ -4663,12 +4565,12 @@ CODE        NAME        ADDRESS                              AUTH METHOD  CREDEN
 team_vault  Team vault  https://team.vault.example.com:8200  token        token        2026-10-31T21:43:44.730174Z
 ```
 
-`CREDENTIALS` names the service credentials MintPress holds for the vault. Their values are never
+`CREDENTIALS` names the service credentials OpsChain holds for the vault. Their values are never
 shown, and neither are the TLS certificate and passphrase in the client options.
 
 #### Register a vault
 
-The code is fixed once the vault is created, and `bundled` is reserved. MintPress signs in to the
+The code is fixed once the vault is created, and `bundled` is reserved. OpsChain signs in to the
 vault with the service account and refuses to save it if the vault rejects the credentials or
 cannot be reached:
 
@@ -4688,7 +4590,7 @@ Pass a secret from a file (`-` reads standard input) rather than inline: `--vaul
 For a vault behind a private CA, put the certificate in `ssl_pem_contents`:
 
 ```bash
-mintpress admin external-vaults update ops_vault \
+opschain admin external-vaults update ops_vault \
   --client-options "$(jq -n --rawfile pem ca.pem '{ssl_pem_contents: $pem}')"
 ```
 
@@ -4743,26 +4645,26 @@ Every command requires a superuser account.
 
 ```bash
 # List and inspect
-mintpress admin runner-credentials list
-mintpress admin runner-credentials list --vault bundled -o yaml
-mintpress admin runner-credentials get payments
-mintpress admin runner-credentials get prod --vault team_vault -o json
+opschain admin runner-credentials list
+opschain admin runner-credentials list --vault bundled -o yaml
+opschain admin runner-credentials get payments
+opschain admin runner-credentials get prod --vault team_vault -o json
 
 # Runners for the payments project read only its mounts of the bundled vault
-mintpress admin runner-credentials create payments --managed --name "Payments runners" \
+opschain admin runner-credentials create payments --managed --name "Payments runners" \
   --mount-path secret/payments --mount-path kv/payments --node /projects/payments
 
 # A token for an external vault, for one environment
-mintpress admin runner-credentials create prod --vault team_vault --name "Prod runners" \
+opschain admin runner-credentials create prod --vault team_vault --name "Prod runners" \
   --auth-method token --token-file runner.token --node /projects/payments/environments/prod
 
 # Rotate a token, or move a credential to two projects
-mintpress admin runner-credentials update prod --vault team_vault --token-file new-runner.token
-mintpress admin runner-credentials update payments --node /projects/payments --node /projects/billing
+opschain admin runner-credentials update prod --vault team_vault --token-file new-runner.token
+opschain admin runner-credentials update payments --node /projects/payments --node /projects/billing
 
 # Delete
-mintpress admin runner-credentials delete payments            # prompts to confirm
-mintpress admin runner-credentials delete prod --vault team_vault --force
+opschain admin runner-credentials delete payments            # prompts to confirm
+opschain admin runner-credentials delete prod --vault team_vault --force
 ```
 
 `get`, `update` and `delete` take the credential's code or ID. Codes are unique per vault, not
@@ -4780,11 +4682,11 @@ are stored and the ID.
 
 #### Managed and supplied credentials
 
-A **managed** credential is for the bundled vault only. MintPress mints and renews its token, which
+A **managed** credential is for the bundled vault only. OpsChain mints and renews its token, which
 can read only the mounts you name with `--mount-path`. It takes no token, username or password.
 
 A **supplied** credential is a token you provide, or a username and password for `userpass` or
-`ldap`. MintPress signs in to the vault with it before saving and refuses it if the vault rejects
+`ldap`. OpsChain signs in to the vault with it before saving and refuses it if the vault rejects
 it. Pass a secret from a file (`-` reads standard input) rather than inline: `--vault-token` and
 `--password` land in your shell history and the process list.
 
@@ -4795,7 +4697,7 @@ The code, the vault and whether the credential is managed are fixed once it is c
 | Flag | Required on create | Description |
 | --- | --- | --- |
 | `--vault` | — | On create, the external vault's code; leave it out or pass `bundled` for the bundled vault. Elsewhere, picks the credential when its code is used for several vaults |
-| `--managed` | — | Create only. Let MintPress mint and renew the token (bundled vault only) |
+| `--managed` | — | Create only. Let OpsChain mint and renew the token (bundled vault only) |
 | `--name` | Yes | Display name |
 | `--auth-method` | — | How runners sign in: `token` (default), `userpass` or `ldap` |
 | `--mount-path` | With `--managed` | A secret mount the managed token can read. Repeat for several |
@@ -4832,14 +4734,14 @@ higher up, or to the default when there is none.
 
 ### 20.11 Rotate the token signing key
 
-MintPress signs API tokens, and the log tokens it gives running steps and agents, with one key.
+OpsChain signs API tokens, and the log tokens it gives running steps and agents, with one key.
 `admin token-signing-key` (alias `signing-key`) shows when it was last rotated and rotates it.
 Both need an administrator account.
 
 ```bash
-mintpress admin token-signing-key get
-mintpress admin token-signing-key rotate
-mintpress admin token-signing-key rotate --compromised   # prompts; --force skips the prompt
+opschain admin token-signing-key get
+opschain admin token-signing-key rotate
+opschain admin token-signing-key rotate --compromised   # prompts; --force skips the prompt
 ```
 
 ```text
@@ -4848,7 +4750,7 @@ ROTATED AT                PREVIOUS KEYS  STEPS ON PREVIOUS SECRET  AGENTS ON PRE
 ```
 
 A routine rotation keeps the previous key, so tokens already issued keep working until they
-expire. PREVIOUS KEYS counts the retired keys still accepted; MintPress drops them once no
+expire. PREVIOUS KEYS counts the retired keys still accepted; OpsChain drops them once no
 unexpired token and no running step or agent depends on them. The last two columns count the
 steps and agents still holding a log token signed before the rotation. `get -q` prints only the
 rotation time, or `never`.
@@ -4869,15 +4771,15 @@ action running at the node will actually see.
 Every node level has the same pair of commands:
 
 ```bash
-mintpress projects converged-properties myproject
-mintpress environments converged-properties dev -P myproject
-mintpress assets converged-properties myasset -P myproject -E dev
-mintpress agents converged-properties myagent -P myproject
+opschain projects converged-properties myproject
+opschain environments converged-properties dev -P myproject
+opschain assets converged-properties myasset -P myproject -E dev
+opschain agents converged-properties myagent -P myproject
 
-mintpress projects converged-settings myproject
-mintpress environments converged-settings dev -P myproject
-mintpress assets converged-settings myasset -P myproject -E dev
-mintpress agents converged-settings myagent -P myproject
+opschain projects converged-settings myproject
+opschain environments converged-settings dev -P myproject
+opschain assets converged-settings myasset -P myproject -E dev
+opschain agents converged-settings myagent -P myproject
 ```
 
 Templates and template versions have the same pair — see
@@ -4894,7 +4796,7 @@ full effective settings, including the ones that come unchanged from the global 
 `vault.mount_path`):
 
 ```bash
-mintpress environments converged-settings dev -P myproject --include-global --show-sources
+opschain environments converged-settings dev -P myproject --include-global --show-sources
 ```
 
 `--include-global` never adds a secured, sensitive or encrypted global value, and only adds
@@ -4905,7 +4807,7 @@ documented settings.
 The default table only counts the top-level keys. Use `-o json` or `-o yaml` for the data itself:
 
 ```bash
-mintpress assets converged-properties myasset -P myproject -E dev -o json
+opschain assets converged-properties myasset -P myproject -E dev -o json
 ```
 
 ### Find out where a value came from
@@ -4913,7 +4815,7 @@ mintpress assets converged-properties myasset -P myproject -E dev -o json
 `--show-sources` replaces the merged data with one row per value, naming the layer that supplied it:
 
 ```bash
-$ mintpress assets converged-properties myasset -P myproject -E dev --show-sources
+$ opschain assets converged-properties myasset -P myproject -E dev --show-sources
 KEY                          SOURCE
 common.cert_suffix           Repository: mintpress/properties/projects/wpgcm_cloud/environments/d1/properties.json
 common.trustStore            Repository: mintpress/properties/projects/wpgcm_cloud/environments/d1/properties.json
@@ -4941,7 +4843,7 @@ source information for <node>` to stderr and exits 0.
 template version and property versions active then:
 
 ```bash
-mintpress assets converged-properties myasset -P myproject -E dev \
+opschain assets converged-properties myasset -P myproject -E dev \
   --converge-date 2026-04-01T00:00:00+00:00 -o yaml
 ```
 
@@ -4954,11 +4856,11 @@ the current values.
 
 `converged-properties` merges a fixed set of layers: the repository's common files, then each
 node level, the template and the template version, and finally the change. Each layer has a
-repository half (the files in git) and a database half (the values set through MintPress).
+repository half (the files in git) and a database half (the values set through OpsChain).
 `--show-layers` lists the layers that apply to the node, with `-` where a layer has no half of that kind:
 
 ```bash
-$ mintpress assets converged-properties myasset -P myproject --show-layers
+$ opschain assets converged-properties myasset -P myproject --show-layers
 LAYER             NAME              REPOSITORY  DATABASE
 project           Project           -           included
 template          Template          -           included
@@ -4970,7 +4872,7 @@ asset             Asset             -           included
 `_repository` or `_database` to drop only that half, and repeat the flag for more than one:
 
 ```bash
-mintpress assets converged-properties myasset -P myproject -E dev \
+opschain assets converged-properties myasset -P myproject -E dev \
   --exclude-layer template --exclude-layer asset_database -o json
 ```
 
@@ -4987,10 +4889,10 @@ A template's actions read the properties and settings converged for the template
 version's for that version. Show them with:
 
 ```bash
-mintpress templates converged-properties "Application" -P myproject
-mintpress templates converged-settings "Application" -P myproject
-mintpress templates versions converged-properties "Application" v1.0 -P myproject -o json
-mintpress templates versions converged-settings "Application" v1.0 -P myproject --show-sources
+opschain templates converged-properties "Application" -P myproject
+opschain templates converged-settings "Application" -P myproject
+opschain templates versions converged-properties "Application" v1.0 -P myproject -o json
+opschain templates versions converged-settings "Application" v1.0 -P myproject --show-sources
 ```
 
 Identify the template by name, or with `--code` or `--id` in place of the name.
@@ -5020,7 +4922,7 @@ To see the properties set *at* one level rather than the merged result, use that
 
 ## 22. File properties
 
-A file property is a whole file held in a node's properties. When an action runs, MintPress writes
+A file property is a whole file held in a node's properties. When an action runs, OpsChain writes
 it into the runner under `/opt/opschain` at the path you chose — which is how a change gets hold of
 a certificate, an SSH key, or a config file it needs on disk.
 
@@ -5030,10 +4932,10 @@ for it.
 ### Store a file
 
 ```bash
-mintpress projects properties store-file myproject --file ./cert.pem --file-path certs/cert.pem
-mintpress environments properties store-file dev -P myproject --file ./cert.pem --file-path certs/cert.pem
-mintpress assets properties store-file myasset -P myproject -E dev --file ./ca.pem --file-path certs/ca.pem
-mintpress agents properties store-file myagent -P myproject --file ./config.yaml --file-path config.yaml
+opschain projects properties store-file myproject --file ./cert.pem --file-path certs/cert.pem
+opschain environments properties store-file dev -P myproject --file ./cert.pem --file-path certs/cert.pem
+opschain assets properties store-file myasset -P myproject -E dev --file ./ca.pem --file-path certs/ca.pem
+opschain agents properties store-file myagent -P myproject --file ./config.yaml --file-path config.yaml
 ```
 
 `--file` is the local file to read. `--file-path` is where it lands, and must include the
@@ -5051,7 +4953,7 @@ exists in the project's OpsChain file properties` unless you pass `--replace-fil
 
 ```bash
 # Overwrite, and restrict the mode
-mintpress projects properties store-file myproject --file ./cert.pem \
+opschain projects properties store-file myproject --file ./cert.pem \
   --file-path certs/cert.pem --mode 0600 --replace-file
 ```
 
@@ -5063,7 +4965,7 @@ the server returns `File format must be specified as base64 when storing binary 
 json` validates the content parses before storing it.
 
 ```bash
-mintpress projects properties store-file myproject --file ./keystore.jks \
+opschain projects properties store-file myproject --file ./keystore.jks \
   --file-path certs/keystore.jks --format base64
 ```
 
@@ -5077,7 +4979,7 @@ instead of storing it in the properties. The file property then holds a referenc
 entry rather than the content itself.
 
 ```bash
-mintpress projects properties store-file myproject --file ./id_rsa \
+opschain projects properties store-file myproject --file ./id_rsa \
   --file-path .ssh/id_rsa --mode 0600 \
   --secret-path path/to/vault --secret-key id_rsa
 ```
@@ -5131,14 +5033,14 @@ file it used.
 
 ```bash
 # An environment-scoped asset
-mintpress artifacts upload -P myproject -E dev -A myasset --code app_war --file ./app.war
+opschain artifacts upload -P myproject -E dev -A myasset --code app_war --file ./app.war
 
 # Label and describe the version
-mintpress artifacts upload -P myproject -A myasset --code app_war --file ./app.war \
+opschain artifacts upload -P myproject -A myasset --code app_war --file ./app.war \
   --label release --label 2026.10 --description "October release build"
 
 # At the project; print only the new artifact's ID
-mintpress artifacts upload -P myproject --code licence_key --file ./licence.key -q
+opschain artifacts upload -P myproject --code licence_key --file ./licence.key -q
 ```
 
 Pick the node with `-P`, adding `-E` and/or `-A`. `-A` without `-E` is a project-level asset.
@@ -5163,20 +5065,20 @@ before anything is stored. It cannot exceed `artifact.hard_max_file_size` (defau
 
 ```bash
 # Every version stored at an asset, newest first
-mintpress artifacts list -P myproject -E dev -A myasset
+opschain artifacts list -P myproject -E dev -A myasset
 
 # The newest version of each code, with a count of its versions
-mintpress artifacts list -P myproject -E dev -A myasset --latest
+opschain artifacts list -P myproject -E dev -A myasset --latest
 
 # Every version of one code carrying a label
-mintpress artifacts list -P myproject -E dev -A myasset --code app_war --label release
+opschain artifacts list -P myproject -E dev -A myasset --code app_war --label release
 
 # What a change or a step created
-mintpress artifacts list --change $CHANGE_ID
-mintpress artifacts list --step $STEP_ID
+opschain artifacts list --change $CHANGE_ID
+opschain artifacts list --step $STEP_ID
 
 # One version in full
-mintpress artifacts get $ARTIFACT_ID -o yaml
+opschain artifacts get $ARTIFACT_ID -o yaml
 ```
 
 A node's list holds only its own artifacts, not those of the nodes beneath it. The table shows
@@ -5203,17 +5105,17 @@ a note on stderr says so.
 
 ```bash
 # By ID, saved under its own file name in the current directory
-mintpress artifacts download $ARTIFACT_ID
+opschain artifacts download $ARTIFACT_ID
 
 # The newest "app_war" version at an asset, into a directory
-mintpress artifacts download -P myproject -E dev -A myasset --code app_war --out-file ./build/
+opschain artifacts download -P myproject -E dev -A myasset --code app_war --out-file ./build/
 
 # The newest version labelled "release", to a chosen file
-mintpress artifacts download -P myproject -A myasset --code app_war --label release \
+opschain artifacts download -P myproject -A myasset --code app_war --label release \
   --out-file /tmp/app.war
 
 # To stdout
-mintpress artifacts download $ARTIFACT_ID --out-file - | sha256sum
+opschain artifacts download $ARTIFACT_ID --out-file - | sha256sum
 ```
 
 With `--code`, the CLI downloads the newest version of that code at the node. Add `--label`
@@ -5232,9 +5134,9 @@ that never finished, when it picks the newest.
 ### See what a change loaded
 
 ```bash
-mintpress artifacts loads --change $CHANGE_ID
-mintpress artifacts loads --step $STEP_ID
-mintpress artifacts loads --change $CHANGE_ID -q   # artifact IDs only
+opschain artifacts loads --change $CHANGE_ID
+opschain artifacts loads --step $STEP_ID
+opschain artifacts loads --change $CHANGE_ID -q   # artifact IDs only
 ```
 
 Each row is one load: ARTIFACT ID, CODE, FILENAME, LABELS, STEP ID and LOADED AT, newest first.
@@ -5249,7 +5151,7 @@ loads; `--limit` raises that.
 
 A remote runner target registers a remote runner daemon — a process outside the cluster that
 claims and runs change steps for the nodes it serves. You create the target with the daemon's RSA
-public key, and MintPress returns a bearer token for the daemon to authenticate with.
+public key, and OpsChain returns a bearer token for the daemon to authenticate with.
 
 `rrt` and `remote-runners` are short aliases for `remote-runner-targets`.
 
@@ -5257,34 +5159,34 @@ public key, and MintPress returns a bearer token for the daemon to authenticate 
 
 ```bash
 # List targets
-mintpress remote-runner-targets list
+opschain remote-runner-targets list
 
 # Register a daemon for an environment, saving its token to a file
-mintpress remote-runner-targets create --code dc1_runner \
+opschain remote-runner-targets create --code dc1_runner \
   --public-key-file daemon.pub -P myproject -E prod --token-file dc1.token
 
 # Register an instance-wide daemon (superuser only)
-mintpress remote-runner-targets create --code shared_runner --public-key-file daemon.pub
+opschain remote-runner-targets create --code shared_runner --public-key-file daemon.pub
 
 # Show one target
-mintpress remote-runner-targets get dc1_runner
+opschain remote-runner-targets get dc1_runner
 
 # Stop the daemon claiming new work
-mintpress remote-runner-targets update dc1_runner --maintenance-mode
+opschain remote-runner-targets update dc1_runner --maintenance-mode
 
 # Limit the daemon to part of its owning node
-mintpress remote-runner-targets update dc1_runner \
+opschain remote-runner-targets update dc1_runner \
   --scope-path /projects/myproject/environments/prod/assets/db
 
 # Upgrade outdated daemons automatically, or ask one to upgrade now
-mintpress remote-runner-targets update dc1_runner --auto-upgrade true
-mintpress remote-runner-targets upgrade dc1_runner
+opschain remote-runner-targets update dc1_runner --auto-upgrade true
+opschain remote-runner-targets upgrade dc1_runner
 
 # Delete a target
-mintpress remote-runner-targets delete dc1_runner
+opschain remote-runner-targets delete dc1_runner
 ```
 
-`--public-key-file` must hold an RSA public key in PEM form. MintPress rejects anything else — a
+`--public-key-file` must hold an RSA public key in PEM form. OpsChain rejects anything else — a
 private key, a certificate or an EC key — with `Public key must be a PEM-encoded RSA public key`,
 and creates no target.
 
@@ -5322,13 +5224,13 @@ LIVE shows `yes` while the daemon is polling. KEY EXPIRES flags an overdue key r
 ### Upgrade the daemon
 
 DAEMON shows the version the daemon last reported. When it differs from the daemon bundled with
-MintPress, its status follows in brackets: `outdated`, `incompatible`, `ahead` or `unknown`. A dash
+OpsChain, its status follows in brackets: `outdated`, `incompatible`, `ahead` or `unknown`. A dash
 means the daemon has not reported yet.
 
 `upgrade` asks an outdated or incompatible daemon to upgrade to the bundled version the next time
 it polls, and DAEMON then adds `upgrade requested`. The daemon's host must allow upgrades
 (`daemon_upgrade_allowed` in `get -o json`); otherwise the request fails with
-`The remote runner daemon must be outdated or incompatible, and its host must allow upgrades, before an upgrade can be requested`.
+`The remote runner daemon must be outdated or incompatible, and its host must allow upgrades`.
 
 `update --auto-upgrade true` upgrades the daemon without asking whenever it falls behind, and
 `false` turns that off. `--auto-upgrade default` makes the target follow the
@@ -5377,10 +5279,10 @@ Each target has versioned settings for its daemon:
 | `zstd_compression_level` | Compression level for data sent to the daemon (1–19) |
 
 ```bash
-mintpress remote-runner-targets settings get dc1_runner
-mintpress remote-runner-targets settings update dc1_runner --data '{"max_concurrent_steps": 4}'
-mintpress remote-runner-targets settings update dc1_runner --from-file runner.json --version 3
-mintpress remote-runner-targets settings versions dc1_runner
+opschain remote-runner-targets settings get dc1_runner
+opschain remote-runner-targets settings update dc1_runner --data '{"max_concurrent_steps": 4}'
+opschain remote-runner-targets settings update dc1_runner --from-file runner.json --version 3
+opschain remote-runner-targets settings versions dc1_runner
 ```
 
 An update replaces the stored settings as a whole; a key you leave out falls back to the instance
@@ -5389,10 +5291,10 @@ that version.
 
 ## 25. Your secret vault credentials
 
-When a secret vault is configured on a node, MintPress can read and write it with your own vault
+When a secret vault is configured on a node, OpsChain can read and write it with your own vault
 token instead of its own. Register the token as a system credential. Log in to the vault
-yourself, create a token under the policies your vault administrators gave you, and hand MintPress
-the token. MintPress never sees your vault password.
+yourself, create a token under the policies your vault administrators gave you, and hand OpsChain
+the token. OpsChain never sees your vault password.
 
 `credentials` is a short alias for `system-credentials`.
 
@@ -5400,29 +5302,29 @@ the token. MintPress never sees your vault password.
 
 ```bash
 # List your credentials
-mintpress system-credentials list
+opschain system-credentials list
 
 # List the vaults you can register a credential for
-mintpress system-credentials vaults
+opschain system-credentials vaults
 
 # Register a token for an external vault, read from a file
-mintpress system-credentials create --vault team_vault --token-file vault.token
+opschain system-credentials create --vault team_vault --token-file vault.token
 
 # Register a token for the bundled vault, piping it in
-vault print token | mintpress system-credentials create --token-file -
+vault print token | opschain system-credentials create --token-file -
 
 # Show one credential
-mintpress system-credentials get 01a18c90-3928-7864-98e9-92ec4a66d992 -o yaml
+opschain system-credentials get 01a18c90-3928-7864-98e9-92ec4a66d992 -o yaml
 
 # Replace an expired token
-mintpress system-credentials update 01a18c90-3928-7864-98e9-92ec4a66d992 --token-file vault.token
+opschain system-credentials update 01a18c90-3928-7864-98e9-92ec4a66d992 --token-file vault.token
 
 # Delete a credential
-mintpress system-credentials delete 01a18c90-3928-7864-98e9-92ec4a66d992
+opschain system-credentials delete 01a18c90-3928-7864-98e9-92ec4a66d992
 ```
 
 `list` shows only your own credentials. Nobody else can list or use them, a superuser included.
-MintPress never returns a token, so `get` and `-o json` show which vault a credential is for, not
+OpsChain never returns a token, so `get` and `-o json` show which vault a credential is for, not
 the token.
 
 ```text
@@ -5432,15 +5334,15 @@ ID                                    TARGET SYSTEM  VAULT    VAULT NAME        
 ```
 
 `VAULT` is the code of the vault the credential is for: `bundled` for the vault that ships with
-MintPress, otherwise a registered external vault. A `MANAGED` credential is one MintPress created
+OpsChain, otherwise a registered external vault. A `MANAGED` credential is one OpsChain created
 for your sign-in session. You cannot update or delete it; both report `not found, or it is a
 managed credential, which is read-only`.
 
 ### Which vault a credential is for
 
 A credential is registered for one vault, not for a node. `--vault` takes the vault's code:
-`bundled` (the default) for the vault that ships with MintPress, or the code of an external vault
-your administrators registered ([External secret vaults](#209-external-secret-vaults)). MintPress
+`bundled` (the default) for the vault that ships with OpsChain, or the code of an external vault
+your administrators registered ([External secret vaults](#209-external-secret-vaults)). OpsChain
 uses the credential wherever that vault is configured.
 `vaults` lists the codes, the bundled vault first:
 
@@ -5460,7 +5362,7 @@ The token is a secret. Pass it with `--token-file <file>`, or `--token-file -` t
 stdin. Surrounding whitespace and the trailing newline are removed. `--vault-token <value>` also works,
 but the token then sits in your shell history and in the process list.
 
-MintPress checks the token with the vault named by `--vault` before storing it. It refuses:
+OpsChain checks the token with the vault named by `--vault` before storing it. It refuses:
 
 - a token the vault rejects (`Token was not accepted by …`)
 - a code that is neither `bundled` nor a registered external vault (`External vault code must be bundled, or the code of a registered external vault`)
@@ -5474,10 +5376,10 @@ When a `secrets` command fails because you hold no credential for a vault, it na
 to run, once per vault:
 
 ```text
-Note: register your token for Team vault with: mintpress system-credentials create --vault team_vault --token-file <file>
+Note: register your token for Team vault with: opschain system-credentials create --vault team_vault --token-file <file>
 ```
 
-Deleting a credential stops MintPress using the token. The token stays valid in the vault until you
+Deleting a credential stops OpsChain using the token. The token stays valid in the vault until you
 revoke it there.
 
 **Create flags:**
@@ -5502,9 +5404,9 @@ revoke it there.
 `--debug` prints every HTTP request and response (method, URL, headers, body, status code, and duration) to **stderr**.
 
 ```bash
-mintpress --debug projects list 2>&1 | head -40
+opschain --debug projects list 2>&1 | head -40
 # or save debug output separately
-mintpress --debug changes create -P myproject -E dev -A myasset -a deploy 2>debug.log
+opschain --debug changes create -P myproject -E dev -A myasset -a deploy 2>debug.log
 ```
 
 The `Authorization` header is always masked but shows the auth **scheme**, so you can confirm which method is in use:
@@ -5519,7 +5421,7 @@ DEBUG:   Authorization: Basic ****    ← basic auth is active
 For unexpected panics or internal errors, `--stacktrace` prints the full goroutine stack.
 
 ```bash
-mintpress --stacktrace changes get some-bad-id
+opschain --stacktrace changes get some-bad-id
 ```
 
 ### `--insecure` — self-signed certificates
@@ -5527,11 +5429,11 @@ mintpress --stacktrace changes get some-bad-id
 For development instances with self-signed TLS certificates:
 
 ```bash
-mintpress --insecure projects list
+opschain --insecure projects list
 # Or set in profile
-mintpress config profiles update dev --api-url https://dev.internal
-# Then set insecure: true in ~/.mintpress/config.yaml manually, or use env var:
-MINTPRESS_INSECURE=true mintpress projects list
+opschain config profiles update dev --api-url https://dev.internal
+# Then set insecure: true in ~/.opschain/config.yaml manually, or use env var:
+OPSCHAIN_INSECURE=true opschain projects list
 ```
 
 > **Warning:** Never use `--insecure` against production instances. It disables TLS certificate verification entirely.
@@ -5540,14 +5442,14 @@ MINTPRESS_INSECURE=true mintpress projects list
 
 | Error | Likely cause | Fix |
 |---|---|---|
-| `failed to load config: profile 'X' not found` | Profile doesn't exist | Run `mintpress config profiles list` and fix spelling, or create the profile |
-| `401 Unauthorized` | Wrong credentials or expired token | Check `MINTPRESS_USERNAME` / `MINTPRESS_PASSWORD`, or re-run `mintpress tokens login` if using a bearer token |
+| `failed to load config: profile 'X' not found` | Profile doesn't exist | Run `opschain config profiles list` and fix spelling, or create the profile |
+| `401 Unauthorized` | Wrong credentials or expired token | Check `OPSCHAIN_USERNAME` / `OPSCHAIN_PASSWORD`, or re-run `opschain tokens login` if using a bearer token |
 | `404 Not Found` | Resource code/ID is wrong, or wrong project scope | Verify the resource exists with a `list` command first |
 | `--environment requires --project to be specified` | Forgot `-P` flag | Add `-P <project_code>` to the command |
 | `--asset requires --project to be specified` | Forgot `-P` flag | Add `-P <project_code>` to the command |
 | `cannot specify both --schedule and --run-at` | Conflicting scheduling flags | Use one or the other |
 | `--show-logs can only be used with --wait-for-completion` | Missing `-w` flag | Add `--wait-for-completion` or `-w` |
 | `invalid JSON data` | Malformed JSON in `--data` / `--property-overrides` | Validate JSON with `echo '...' \| jq .` |
-| `context deadline exceeded` / timeout | Request took too long | Increase `timeout` in profile or use `MINTPRESS_TIMEOUT=300` |
+| `context deadline exceeded` / timeout | Request took too long | Increase `timeout` in profile or use `OPSCHAIN_TIMEOUT=300` |
 | TLS handshake error | Self-signed cert | Add `insecure: true` to profile or use `--insecure` |
-| `unpermitted parameter: auth_provider` | `auth_provider` placed beside `assignments` in assignment JSON | Put `auth_provider` on each user entry instead |
+| `unpermitted parameter: auth_provider` | Sending read-only fields in assignment request | Do not send `auth_provider` in assignment JSON |
